@@ -10,8 +10,11 @@ import * as vscode from 'vscode';
 import { strict as assert } from 'assert';
 import { NotebookSessionService } from '../notebookSessionService';
 import { raceTimeout } from '../utils';
+import { randomUUID } from 'crypto';
 
-const TEST_RUNTIME_ID = '00000000-0000-0000-0000-100000000000';
+const TestRuntimeLanguageVersion = '0.0.1';
+const TestRuntimeShortName = TestRuntimeLanguageVersion;
+const TestRuntimeName = `Test ${TestRuntimeShortName}`;
 
 class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	private _disposables = new Array<vscode.Disposable>();
@@ -115,18 +118,17 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 }
 
 function testLanguageRuntimeMetadata(): positron.LanguageRuntimeMetadata {
-	const languageVersion = '0.0.1';
-	const runtimeShortName = languageVersion;
+	const runtimeId = randomUUID();
 	return {
 		base64EncodedIconSvg: '',
 		extraRuntimeData: {},
 		languageId: 'test',
 		languageName: 'Test',
-		languageVersion,
-		runtimeId: TEST_RUNTIME_ID,
-		runtimeName: `Test ${runtimeShortName}`,
+		languageVersion: TestRuntimeLanguageVersion,
+		runtimeId,
+		runtimeName: TestRuntimeName,
 		runtimePath: '/test',
-		runtimeShortName,
+		runtimeShortName: TestRuntimeShortName,
 		runtimeSource: 'Test',
 		runtimeVersion: '0.0.1',
 		sessionLocation: positron.LanguageRuntimeSessionLocation.Browser,
@@ -140,7 +142,11 @@ class TestLanguageRuntimeManager implements positron.LanguageRuntimeManager {
 	onDidDiscoverRuntime = this.onDidDiscoverRuntimeEmitter.event;
 
 	async* discoverRuntimes(): AsyncGenerator<positron.LanguageRuntimeMetadata> {
-		yield testLanguageRuntimeMetadata();
+		// Do nothing on discovery - we manually register runtimes.
+	}
+
+	registerTestLanguageRuntime(): void {
+		this.onDidDiscoverRuntimeEmitter.fire(testLanguageRuntimeMetadata());
 	}
 
 	async createSession(
@@ -152,66 +158,49 @@ class TestLanguageRuntimeManager implements positron.LanguageRuntimeManager {
 }
 
 suite('NotebookSessionService', () => {
+	let manager: TestLanguageRuntimeManager;
+	let managerDisposable: vscode.Disposable;
+	let runtime: positron.LanguageRuntimeMetadata;
 	let disposables: vscode.Disposable[];
 	let notebookSessionService: NotebookSessionService;
 	let notebookUri: vscode.Uri;
-	let session: positron.LanguageRuntimeSession;
 	let notebookUri2: vscode.Uri;
-	let session2: positron.LanguageRuntimeSession;
-	let restartSessionStub: sinon.SinonStub;
-	let getNotebookSessionStub: sinon.SinonStub;
 
-	let managerDisposable: vscode.Disposable;
-	let runtime: positron.LanguageRuntimeMetadata;
-
-	suiteSetup(async () => {
-		// Register a manager.
-		const manager = new TestLanguageRuntimeManager();
+	suiteSetup(() => {
+		// Register a test runtime manager.
+		manager = new TestLanguageRuntimeManager();
 		managerDisposable = positron.runtime.registerLanguageRuntimeManager(manager);
-
-		// Wait for the test runtimes to be registered.
-		const registeredRuntime = await raceTimeout(
-			new Promise<positron.LanguageRuntimeMetadata>((resolve) => {
-				positron.runtime.onDidRegisterRuntime((runtimeMetadata) => {
-					if (runtimeMetadata.runtimeId === TEST_RUNTIME_ID) {
-						resolve(runtimeMetadata);
-					}
-				});
-			}),
-			1_000,
-		);
-		assert(registeredRuntime, 'Timed out waiting for test runtime to be registered');
-		runtime = registeredRuntime;
 	});
 
 	suiteTeardown(() => {
 		managerDisposable.dispose();
 	});
 
-	setup(() => {
+	setup(async () => {
 		disposables = [];
+
+		// Register a new test runtime and wait for it to be acknowledged.
+		const registeredRuntimePromise = new Promise<positron.LanguageRuntimeMetadata>((resolve) => {
+			const disposable = positron.runtime.onDidRegisterRuntime((runtimeMetadata) => {
+				if (runtimeMetadata.runtimeName === TestRuntimeName) {
+					disposable.dispose();
+					resolve(runtimeMetadata);
+				}
+			});
+		});
+		manager.registerTestLanguageRuntime();
+		const registeredRuntime = await raceTimeout(registeredRuntimePromise, 5_000);
+		assert(registeredRuntime, 'Timed out waiting for test runtime to be registered');
+		runtime = registeredRuntime;
+
 		notebookSessionService = new NotebookSessionService();
 		disposables.push(notebookSessionService);
 
-		notebookUri = vscode.Uri.file('test/notebook');
-		notebookUri2 = vscode.Uri.file('test/notebook2');
-
-		// Stub the restartSession method to simulate restarting the session.
-		const sessionsBySessionId = new Map<string, TestLanguageRuntimeSession>();
-		// 	[session, session2].map(s => [s.metadata.sessionId, s as any as TestLanguageRuntimeSession])
-		// );
-		restartSessionStub = sinon.stub(positron.runtime, 'restartSession').callsFake(async (sessionId: string) => {
-			const session = sessionsBySessionId.get(sessionId);
-			assert(session, `Session with ID ${sessionId} not found`);
-			session.setState(positron.RuntimeState.Ready);
-		});
-
-		getNotebookSessionStub = sinon.stub(positron.runtime, 'getNotebookSession').resolves(undefined);
-
-		positron.runtime.registerLanguageRuntimeManager(new TestLanguageRuntimeManager());
+		notebookUri = vscode.Uri.file(randomUUID());
+		notebookUri2 = vscode.Uri.file(randomUUID());
 	});
 
-	teardown(() => {
+	teardown(async () => {
 		disposables.forEach(disposable => disposable.dispose());
 		sinon.restore();
 	});
@@ -227,7 +216,7 @@ suite('NotebookSessionService', () => {
 
 		// Check that the expected session was returned.
 		assert.ok(session instanceof TestLanguageRuntimeSession);
-		assert.equal(session.runtimeMetadata.runtimeId, TEST_RUNTIME_ID);
+		assert.equal(session.runtimeMetadata.runtimeName, TestRuntimeName);
 
 		// Check that the session was started.
 		assert.equal(session.state, positron.RuntimeState.Ready);
