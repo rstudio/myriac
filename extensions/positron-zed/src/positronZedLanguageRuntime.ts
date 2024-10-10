@@ -251,6 +251,13 @@ export class PositronZedRuntimeSession implements positron.LanguageRuntimeSessio
 	onDidEndSession: vscode.Event<positron.LanguageRuntimeExit> = this._onDidEndSession.event;
 
 	/**
+	 * The current state of the runtime.
+	 */
+	get state(): positron.RuntimeState {
+		return this._state;
+	}
+
+	/**
 	 * Execute code in the runtime.
 	 * @param code The code to exeucte.
 	 * @param id The ID of the operation.

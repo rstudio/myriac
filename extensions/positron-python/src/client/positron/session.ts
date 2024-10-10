@@ -131,6 +131,10 @@ export class PythonRuntimeSession implements positron.LanguageRuntimeSession, vs
 
     onDidEndSession: vscode.Event<positron.LanguageRuntimeExit>;
 
+    get state(): positron.RuntimeState {
+        return this._state;
+    }
+
     execute(
         code: string,
         id: string,

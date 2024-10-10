@@ -196,6 +196,13 @@ export class LanguageRuntimeSessionAdapter
 	onDidEndSession: vscode.Event<positron.LanguageRuntimeExit>;
 
 	/**
+	 * The current state of the runtime.
+	 */
+	get state(): positron.RuntimeState {
+		return this._kernelState;
+	}
+
+	/**
 	 * Executes a fragment of code in the kernel.
 	 *
 	 * @param code The code to execute.
