@@ -1240,6 +1240,11 @@ declare module 'positron' {
 		export function getPreferredRuntime(languageId: string): Thenable<LanguageRuntimeMetadata>;
 
 		/**
+		 * List all currently active sessions.
+		 */
+		export function getSessions(): Thenable<LanguageRuntimeSession[]>;
+
+		/**
 		 * Get the active foreground session, if any.
 		 */
 		export function getForegroundSession(): Thenable<LanguageRuntimeSession | undefined>;

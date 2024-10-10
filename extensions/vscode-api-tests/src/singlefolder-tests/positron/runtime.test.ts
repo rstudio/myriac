@@ -28,6 +28,10 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 		readonly metadata: positron.RuntimeSessionMetadata
 	) { }
 
+	get state(): positron.RuntimeState {
+		throw new Error('Not implemented.');
+	}
+
 	execute(_code: string, _id: string, _mode: positron.RuntimeCodeExecutionMode, _errorBehavior: positron.RuntimeErrorBehavior): void {
 		throw new Error('Not implemented.');
 	}

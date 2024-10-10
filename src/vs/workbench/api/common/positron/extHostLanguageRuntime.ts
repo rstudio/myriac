@@ -605,6 +605,10 @@ export class ExtHostLanguageRuntime implements extHostProtocol.ExtHostLanguageRu
 		}, 2000, 5);
 	}
 
+	public getSessions(): Promise<positron.LanguageRuntimeSession[]> {
+		return Promise.resolve(this._runtimeSessions);
+	}
+
 	public async getForegroundSession(): Promise<positron.LanguageRuntimeSession | undefined> {
 		const sessionId = await this._proxy.$getForegroundSession();
 		if (!sessionId) {
