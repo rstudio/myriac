@@ -262,15 +262,6 @@ export class NotebookSessionService implements vscode.Disposable {
 			throw new Error(`Tried to shutdown runtime for notebook without a running runtime: ${notebookUri.path}`);
 		}
 
-		// Start the shutdown sequence.
-		try {
-			log.info(`Shutting down runtime ${session.runtimeMetadata.runtimeName} for notebook ${notebookUri.path}`);
-			await session.shutdown(positron.RuntimeExitReason.Shutdown);
-		} catch (err) {
-			log.error(`Shutting down runtime ${session.runtimeMetadata.runtimeName} for notebook ${notebookUri.path} failed. Reason: ${err}`);
-			throw err;
-		}
-
 		// Wait for the session to end. This is necessary so that we know when to start the next
 		// session for the notebook, since at most one session can exist per notebook.
 		const timeout = new Promise<void>((_, reject) => {
@@ -284,6 +275,16 @@ export class NotebookSessionService implements vscode.Disposable {
 				resolve();
 			});
 		});
+
+		// Start the shutdown sequence.
+		try {
+			log.info(`Shutting down runtime ${session.runtimeMetadata.runtimeName} for notebook ${notebookUri.path}`);
+			await session.shutdown(positron.RuntimeExitReason.Shutdown);
+		} catch (err) {
+			log.error(`Shutting down runtime ${session.runtimeMetadata.runtimeName} for notebook ${notebookUri.path} failed. Reason: ${err}`);
+			throw err;
+		}
+
 		try {
 			await Promise.race([promise, timeout]);
 		} catch (err) {
@@ -350,15 +351,6 @@ export class NotebookSessionService implements vscode.Disposable {
 			}
 		}
 
-		// Start the restart sequence.
-		try {
-			log.info(`Restarting session ${session.metadata.sessionId} for notebook ${notebookUri.path}`);
-			await positron.runtime.restartSession(session.metadata.sessionId);
-		} catch (err) {
-			log.error(`Restarting session ${session.metadata.sessionId} for notebook ${notebookUri.path} failed. Reason: ${err}`);
-			throw err;
-		}
-
 		// Wait for the session to be ready, or for a timeout.
 		const timeout = new Promise<void>((_, reject) =>
 			setTimeout(() => reject(new Error('Timeout waiting for runtime to restart')), 5000));
@@ -370,6 +362,16 @@ export class NotebookSessionService implements vscode.Disposable {
 				}
 			});
 		});
+
+		// Start the restart sequence.
+		try {
+			log.info(`Restarting session ${session.metadata.sessionId} for notebook ${notebookUri.path}`);
+			await positron.runtime.restartSession(session.metadata.sessionId);
+		} catch (err) {
+			log.error(`Restarting session ${session.metadata.sessionId} for notebook ${notebookUri.path} failed. Reason: ${err}`);
+			throw err;
+		}
+
 		try {
 			await Promise.race([promise, timeout]);
 		} catch (err) {
