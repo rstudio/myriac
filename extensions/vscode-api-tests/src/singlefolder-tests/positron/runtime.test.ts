@@ -77,6 +77,9 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	}
 
 	dispose() {
+		this._onDidReceiveRuntimeMessage.dispose();
+		this._onDidChangeRuntimeState.dispose();
+		this._onDidEndSession.dispose();
 	}
 }
 

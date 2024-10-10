@@ -9,37 +9,130 @@ import * as positron from 'positron';
 import * as vscode from 'vscode';
 import { strict as assert } from 'assert';
 import { NotebookSessionService } from '../notebookSessionService';
+import { raceTimeout } from '../utils';
 
-class TestLanguageRuntimeSession implements Partial<positron.LanguageRuntimeSession>, vscode.Disposable {
-	private readonly _onDidEndSession = new vscode.EventEmitter<positron.LanguageRuntimeExit>();
+const testRuntimeId = '00000000-0000-0000-0000-100000000000';
+
+class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
+	private readonly _onDidReceiveRuntimeMessage = new vscode.EventEmitter<positron.LanguageRuntimeMessage>();
 	private readonly _onDidChangeRuntimeState = new vscode.EventEmitter<positron.RuntimeState>();
+	private readonly _onDidEndSession = new vscode.EventEmitter<positron.LanguageRuntimeExit>();
 
-	public readonly onDidEndSession = this._onDidEndSession.event;
-	public readonly onDidChangeRuntimeState = this._onDidChangeRuntimeState.event;
+	onDidReceiveRuntimeMessage: vscode.Event<positron.LanguageRuntimeMessage> = this._onDidReceiveRuntimeMessage.event;
+	onDidChangeRuntimeState: vscode.Event<positron.RuntimeState> = this._onDidChangeRuntimeState.event;
+	onDidEndSession: vscode.Event<positron.LanguageRuntimeExit> = this._onDidEndSession.event;
+
+	readonly dynState = {
+		inputPrompt: `T>`,
+		continuationPrompt: 'T+',
+	};
 
 	constructor(
-		public readonly metadata: positron.RuntimeSessionMetadata,
-		public readonly runtimeMetadata: positron.LanguageRuntimeMetadata,
+		readonly runtimeMetadata: positron.LanguageRuntimeMetadata,
+		readonly metadata: positron.RuntimeSessionMetadata,
 	) { }
 
-	dispose() {
-		this._onDidEndSession.dispose();
-		this._onDidChangeRuntimeState.dispose();
+	execute(_code: string, _id: string, _mode: positron.RuntimeCodeExecutionMode, _errorBehavior: positron.RuntimeErrorBehavior): void {
+		throw new Error('Not implemented.');
+	}
+
+	async isCodeFragmentComplete(_code: string): Promise<positron.RuntimeCodeFragmentStatus> {
+		throw new Error('Not implemented.');
+	}
+
+	async createClient(_id: string, _type: positron.RuntimeClientType, _params: any, _metadata?: any): Promise<void> {
+		throw new Error('Not implemented.');
+	}
+
+	async listClients(_type?: positron.RuntimeClientType | undefined): Promise<Record<string, string>> {
+		throw new Error('Not implemented.');
+	}
+
+	removeClient(_id: string): void {
+		throw new Error('Not implemented.');
+	}
+
+	sendClientMessage(_client_id: string, _message_id: string, _message: any): void {
+		throw new Error('Not implemented.');
+	}
+
+	replyToPrompt(_id: string, _reply: string): void {
+		throw new Error('Not implemented.');
+	}
+
+	async start(): Promise<positron.LanguageRuntimeInfo> {
+		throw new Error('Not implemented.');
+	}
+
+	async interrupt(): Promise<void> {
+		throw new Error('Not implemented.');
+	}
+
+	async restart(): Promise<void> {
+		throw new Error('Not implemented.');
 	}
 
 	async shutdown(_exitReason: positron.RuntimeExitReason): Promise<void> {
 		this._onDidEndSession.fire({} as positron.LanguageRuntimeExit);
 	}
 
-	setState(state: positron.RuntimeState): void {
+	async forceQuit(): Promise<void> {
+		throw new Error('Not implemented.');
+	}
+
+	dispose() {
+		this._onDidReceiveRuntimeMessage.dispose();
+		this._onDidChangeRuntimeState.dispose();
+		this._onDidEndSession.dispose();
+	}
+
+	// Test helpers.
+
+	setState(state: positron.RuntimeState) {
 		this._onDidChangeRuntimeState.fire(state);
+	}
+}
+
+function testLanguageRuntimeMetadata(): positron.LanguageRuntimeMetadata {
+	const languageVersion = '0.0.1';
+	const runtimeShortName = languageVersion;
+	return {
+		base64EncodedIconSvg: '',
+		extraRuntimeData: {},
+		languageId: 'test',
+		languageName: 'Test',
+		languageVersion,
+		runtimeId: testRuntimeId,
+		runtimeName: `Test ${runtimeShortName}`,
+		runtimePath: '/test',
+		runtimeShortName,
+		runtimeSource: 'Test',
+		runtimeVersion: '0.0.1',
+		sessionLocation: positron.LanguageRuntimeSessionLocation.Browser,
+		startupBehavior: positron.LanguageRuntimeStartupBehavior.Implicit,
+	};
+}
+
+class TestLanguageRuntimeManager implements positron.LanguageRuntimeManager {
+	readonly onDidDiscoverRuntimeEmitter = new vscode.EventEmitter<positron.LanguageRuntimeMetadata>();
+
+	onDidDiscoverRuntime = this.onDidDiscoverRuntimeEmitter.event;
+
+	async* discoverRuntimes(): AsyncGenerator<positron.LanguageRuntimeMetadata> {
+		yield testLanguageRuntimeMetadata();
+	}
+
+	async createSession(
+		runtimeMetadata: positron.LanguageRuntimeMetadata,
+		sessionMetadata: positron.RuntimeSessionMetadata
+	): Promise<positron.LanguageRuntimeSession> {
+		return new TestLanguageRuntimeSession(runtimeMetadata, sessionMetadata);
 	}
 }
 
 suite('NotebookSessionService', () => {
 	let disposables: vscode.Disposable[];
 	let notebookSessionService: NotebookSessionService;
-	let runtime: positron.LanguageRuntimeMetadata;
 	let notebookUri: vscode.Uri;
 	let session: positron.LanguageRuntimeSession;
 	let notebookUri2: vscode.Uri;
@@ -49,25 +142,49 @@ suite('NotebookSessionService', () => {
 	let getNotebookSessionStub: sinon.SinonStub;
 	let shutdownSpy: sinon.SinonSpy;
 
+	let managerDisposable: vscode.Disposable;
+	let runtime: positron.LanguageRuntimeMetadata;
+
+	suiteSetup(async () => {
+		// Register a manager.
+		const manager = new TestLanguageRuntimeManager();
+		managerDisposable = positron.runtime.registerLanguageRuntimeManager(manager);
+
+		// Wait for the test runtimes to be registered.
+		const registeredRuntime = await raceTimeout(
+			new Promise<positron.LanguageRuntimeMetadata>((resolve) => {
+				positron.runtime.onDidRegisterRuntime((runtimeMetadata) => {
+					if (runtimeMetadata.runtimeId === testRuntimeId) {
+						resolve(runtimeMetadata);
+					}
+				});
+			}),
+			1_000,
+		);
+		assert(registeredRuntime, 'Timed out waiting for test runtime to be registered');
+		runtime = registeredRuntime;
+	});
+
+	suiteTeardown(() => {
+		managerDisposable.dispose();
+	});
+
 	setup(() => {
 		disposables = [];
 		notebookSessionService = new NotebookSessionService();
 		disposables.push(notebookSessionService);
 
-		runtime = {
-			runtimeId: 'testRuntime',
-			languageName: 'Test Language'
-		} as positron.LanguageRuntimeMetadata;
-
 		notebookUri = vscode.Uri.file('test/notebook');
 		session = new TestLanguageRuntimeSession(
-			{ sessionId: 'testSession' } as positron.RuntimeSessionMetadata, runtime,
+			runtime,
+			{ sessionId: 'testSession' } as positron.RuntimeSessionMetadata,
 		) as any;
 		disposables.push(session);
 
 		notebookUri2 = vscode.Uri.file('test/notebook2');
 		session2 = new TestLanguageRuntimeSession(
-			{ sessionId: 'testSession2' } as positron.RuntimeSessionMetadata, runtime,
+			runtime,
+			{ sessionId: 'testSession2' } as positron.RuntimeSessionMetadata,
 		) as any;
 		disposables.push(session2);
 
@@ -89,6 +206,8 @@ suite('NotebookSessionService', () => {
 		getNotebookSessionStub = sinon.stub(positron.runtime, 'getNotebookSession').resolves(undefined);
 
 		shutdownSpy = sinon.spy(session, 'shutdown');
+
+		positron.runtime.registerLanguageRuntimeManager(new TestLanguageRuntimeManager());
 	});
 
 	teardown(() => {
@@ -327,7 +446,7 @@ suite('NotebookSessionService', () => {
 		// Attempt to shutdown the runtime session and assert that it throws a timeout error.
 		await assert.rejects(
 			shutdownPromise,
-			new Error('Shutting down runtime undefined for notebook /test/notebook timed out'),
+			new Error('Shutting down runtime Test 0.0.1 for notebook /test/notebook timed out'),
 		);
 
 		// Verify that the session's shutdown method was called.
