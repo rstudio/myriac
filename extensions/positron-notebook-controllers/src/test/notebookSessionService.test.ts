@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as sinon from 'sinon';
+import * as path from 'path';
 import * as positron from 'positron';
 import * as vscode from 'vscode';
 import { strict as assert } from 'assert';
@@ -70,10 +71,10 @@ suite('NotebookSessionService', () => {
 		) as any;
 		disposables.push(session2);
 
-		// Stub the startLanguageRuntime method to return the appropriate mock session based on the notebook URI.
+		// Stub startLanguageRuntime to return the appropriate mock session based on the notebook URI.
 		startLanguageRuntimeStub = sinon.stub(positron.runtime, 'startLanguageRuntime');
-		startLanguageRuntimeStub.withArgs(runtime.runtimeId, sinon.match.any, notebookUri).resolves(session);
-		startLanguageRuntimeStub.withArgs(runtime.runtimeId, sinon.match.any, notebookUri2).resolves(session2);
+		startLanguageRuntimeStub.withArgs(runtime.runtimeId, path.basename(notebookUri.fsPath), notebookUri).resolves(session);
+		startLanguageRuntimeStub.withArgs(runtime.runtimeId, path.basename(notebookUri2.fsPath), notebookUri2).resolves(session2);
 
 		// Stub the restartSession method to simulate restarting the session.
 		const sessionsBySessionId = new Map<string, TestLanguageRuntimeSession>(
@@ -95,97 +96,101 @@ suite('NotebookSessionService', () => {
 		sinon.restore();
 	});
 
-	// #region Start tests
+	// #region startRuntimeSession
 
 	async function verifyStartRuntimeSession(
 		notebookUri: vscode.Uri,
 		runtimeId: string,
 		expectedSession: positron.LanguageRuntimeSession,
 	): Promise<positron.LanguageRuntimeSession> {
-		// Start the runtime session for the notebook URI.
-		const startedSession = await notebookSessionService.startRuntimeSession(notebookUri, runtimeId);
+		// Start a session for the notebook.
+		const session = await notebookSessionService.startRuntimeSession(notebookUri, runtimeId);
 
-		// Assert that the started session matches the mock session.
-		assert.equal(startedSession, expectedSession);
+		// Assert that the expected session was returned.
+		assert.equal(session, expectedSession);
 
-		// Verify that the notebook session service now knows of the session.
+		// Assert that the session was registered.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), expectedSession);
 
-		return startedSession;
+		return session;
 	}
 
 	test('start', async () => {
 		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
 
-		// Verify that the startLanguageRuntime method was called once.
 		sinon.assert.calledOnce(startLanguageRuntimeStub);
 	});
 
 	test('start with a positron error', async () => {
-		// Stub the startLanguageRuntime method to throw an error.
+		// Override startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
 		startLanguageRuntimeStub.reset();
 		startLanguageRuntimeStub.rejects(error);
 
-		// Attempt to start the runtime session for the notebook URI and assert that it throws the expected error.
+		// Assert that starting a session throws the expected error.
 		await assert.rejects(notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId), error);
 
-		// Verify that the notebook session service did not record the session.
+		// Assert that the session was not registered.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
 	test('start with existing session in positron', async () => {
-		// Stub the getNotebookSession method to return the mock session.
+		// Stub getNotebookSession to return the mock session.
 		getNotebookSessionStub.resolves(session);
 
 		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+
+		sinon.assert.calledOnce(getNotebookSessionStub);
+		sinon.assert.notCalled(startLanguageRuntimeStub);
 	});
 
 	test('start after already started', async () => {
 		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+		startLanguageRuntimeStub.resetHistory();
 
-		// Attempt to start another runtime session for the same notebook URI.
+		// Starting a session when one is already running should reject.
 		await assert.rejects(
 			notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId),
 			new Error('Tried to start a runtime for a notebook that already has one: /test/notebook')
 		);
 
-		// Verify that the startLanguageRuntime method was called once.
-		sinon.assert.calledOnce(startLanguageRuntimeStub);
+		sinon.assert.notCalled(startLanguageRuntimeStub);
+
+		// Assert that the session is still registered.
+		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 	});
 
 	test('start different notebooks concurrently', async () => {
-		// Start the runtime sessions for two different notebook URIs concurrently.
+		// Start sessions for two different notebooks concurrently.
 		await Promise.all([
 			verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session),
 			verifyStartRuntimeSession(notebookUri2, runtime.runtimeId, session2),
 		]);
 
-		// Verify that the startLanguageRuntime method was called twice.
 		sinon.assert.calledTwice(startLanguageRuntimeStub);
 	});
 
 	test('start while starting', async () => {
-		// Start the runtime session for the same notebook URI twice concurrently.
+		// Start sessions for the same notebook twice concurrently.
 		const [startedSession1, startedSession2] = await Promise.all([
 			verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session),
 			verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session),
 		]);
 
-		// Assert that the same expected session is returned.
+		// Assert that the same session is returned.
 		assert.equal(startedSession1, startedSession2);
 
-		// Verify that the startLanguageRuntime method was called once.
+		// The positron API should only be called once.
 		sinon.assert.calledOnce(startLanguageRuntimeStub);
 	});
 
 	test('start while starting and starting errors', async () => {
-		// Stub the startLanguageRuntime method to throw an error.
+		// Override startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
 		startLanguageRuntimeStub.reset();
 		startLanguageRuntimeStub.rejects(error);
 
-		// Attempt to start the runtime session for the notebook URI twice concurrently.
+		// Attempt to start a session for the same notebook twice concurrently.
 		const startPromise1 = notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
 		const startPromise2 = notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
 
@@ -193,24 +198,26 @@ suite('NotebookSessionService', () => {
 		await assert.rejects(startPromise1, error);
 		await assert.rejects(startPromise2, error);
 
-		// Verify that the startLanguageRuntime method was called once.
 		sinon.assert.calledOnce(startLanguageRuntimeStub);
 
-		// Verify that the notebook session service did not record the session.
+		// Assert that the session was not registered with the notebook session service.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
 	test('start while shutting down', async () => {
 		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+		startLanguageRuntimeStub.resetHistory();
 
-		// Shutdown the runtime session for the notebook URI and start a new session concurrently.
+		// Shutdown the session for the notebook and start a session concurrently.
 		notebookSessionService.shutdownRuntimeSession(notebookUri);
 		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
 
-		// Verify that the session was shutdown before starting a new one.
+		sinon.assert.calledOnce(shutdownSpy);
+		sinon.assert.calledOnce(startLanguageRuntimeStub);
 		sinon.assert.callOrder(shutdownSpy, startLanguageRuntimeStub);
 	});
 
+	// Related: https://github.com/posit-dev/positron/issues/4224
 	test('start while shutting down and shutting down errors', async () => {
 		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
 
@@ -242,7 +249,7 @@ suite('NotebookSessionService', () => {
 		// Verify that the restartSession method was called once.
 		sinon.assert.calledOnce(restartSessionStub);
 
-		// Verify that the startLanguageRuntime method was not called a second time.
+		// Verify that startLanguageRuntime was not called a second time.
 		sinon.assert.calledOnce(startLanguageRuntimeStub);
 	});
 
@@ -267,7 +274,7 @@ suite('NotebookSessionService', () => {
 
 	// #endregion
 
-	// #region Shutdown tests
+	// #region shutdownRuntimeSession
 
 	async function verifyShutdownRuntimeSession(notebookUri: vscode.Uri): Promise<void> {
 		// Shutdown the runtime session for the notebook URI.
@@ -288,15 +295,14 @@ suite('NotebookSessionService', () => {
 	test('shutdown with a positron error', async () => {
 		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
 
-		// Stub the shutdown method to throw an error.
+		// Override the shutdown method to throw an error.
 		const error = new Error('Failed to shutdown runtime');
 		shutdownSpy.restore();
 		shutdownSpy = sinon.stub(session, 'shutdown').rejects(error);
 
-		// Attempt to shutdown the runtime session for the notebook URI and assert that it throws the expected error.
+		// Attempt to shutdown the session for the notebook and assert that it throws the expected error.
 		await assert.rejects(notebookSessionService.shutdownRuntimeSession(notebookUri), error);
 
-		// Verify that the session's shutdown method was called.
 		sinon.assert.calledOnce(shutdownSpy);
 
 		// TODO: Should it be removed?
@@ -416,7 +422,7 @@ suite('NotebookSessionService', () => {
 	});
 
 	test('shutdown while starting and starting errors', async () => {
-		// Stub the startLanguageRuntime method to throw an error.
+		// Stub startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
 		startLanguageRuntimeStub.reset();
 		startLanguageRuntimeStub.rejects(error);
@@ -625,7 +631,7 @@ suite('NotebookSessionService', () => {
 		verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
 		await verifyRestartRuntimeSession(notebookUri, session);
 
-		// Verify that the startLanguageRuntime method was called once and the restartSession method was not called.
+		// Verify that startLanguageRuntime was called once and the restartSession method was not called.
 		sinon.assert.calledOnce(startLanguageRuntimeStub);
 		sinon.assert.notCalled(restartSessionStub);
 
@@ -634,7 +640,7 @@ suite('NotebookSessionService', () => {
 	});
 
 	test('restart while starting and starting errors', async () => {
-		// Stub the startLanguageRuntime method to throw an error.
+		// Stub startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
 		startLanguageRuntimeStub.reset();
 		startLanguageRuntimeStub.rejects(error);
