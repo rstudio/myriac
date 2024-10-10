@@ -11,9 +11,11 @@ import { strict as assert } from 'assert';
 import { NotebookSessionService } from '../notebookSessionService';
 import { raceTimeout } from '../utils';
 
-const testRuntimeId = '00000000-0000-0000-0000-100000000000';
+const TEST_RUNTIME_ID = '00000000-0000-0000-0000-100000000000';
 
 class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
+	private _disposables = new Array<vscode.Disposable>();
+
 	private readonly _onDidReceiveRuntimeMessage = new vscode.EventEmitter<positron.LanguageRuntimeMessage>();
 	private readonly _onDidChangeRuntimeState = new vscode.EventEmitter<positron.RuntimeState>();
 	private readonly _onDidEndSession = new vscode.EventEmitter<positron.LanguageRuntimeExit>();
@@ -21,6 +23,8 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	onDidReceiveRuntimeMessage: vscode.Event<positron.LanguageRuntimeMessage> = this._onDidReceiveRuntimeMessage.event;
 	onDidChangeRuntimeState: vscode.Event<positron.RuntimeState> = this._onDidChangeRuntimeState.event;
 	onDidEndSession: vscode.Event<positron.LanguageRuntimeExit> = this._onDidEndSession.event;
+
+	private _state = positron.RuntimeState.Uninitialized;
 
 	readonly dynState = {
 		inputPrompt: `T>`,
@@ -30,7 +34,16 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	constructor(
 		readonly runtimeMetadata: positron.LanguageRuntimeMetadata,
 		readonly metadata: positron.RuntimeSessionMetadata,
-	) { }
+	) {
+		this._disposables.push(
+			this._onDidReceiveRuntimeMessage,
+			this._onDidChangeRuntimeState,
+			this._onDidEndSession,
+
+			// Track the runtime state.
+			this.onDidChangeRuntimeState(state => this._state = state),
+		);
+	}
 
 	execute(_code: string, _id: string, _mode: positron.RuntimeCodeExecutionMode, _errorBehavior: positron.RuntimeErrorBehavior): void {
 		throw new Error('Not implemented.');
@@ -41,19 +54,20 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	}
 
 	async createClient(_id: string, _type: positron.RuntimeClientType, _params: any, _metadata?: any): Promise<void> {
-		throw new Error('Not implemented.');
+		// Runtime clients are not supported.
 	}
 
 	async listClients(_type?: positron.RuntimeClientType | undefined): Promise<Record<string, string>> {
-		throw new Error('Not implemented.');
+		// Runtime clients are not supported.
+		return {};
 	}
 
 	removeClient(_id: string): void {
-		throw new Error('Not implemented.');
+		// Runtime clients are not supported.
 	}
 
 	sendClientMessage(_client_id: string, _message_id: string, _message: any): void {
-		throw new Error('Not implemented.');
+		// Runtime clients are not supported.
 	}
 
 	replyToPrompt(_id: string, _reply: string): void {
@@ -61,7 +75,12 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	}
 
 	async start(): Promise<positron.LanguageRuntimeInfo> {
-		throw new Error('Not implemented.');
+		this._onDidChangeRuntimeState.fire(positron.RuntimeState.Ready);
+		return {
+			banner: 'Test runtime started',
+			implementation_version: this.runtimeMetadata.runtimeVersion,
+			language_version: this.runtimeMetadata.languageVersion,
+		};
 	}
 
 	async interrupt(): Promise<void> {
@@ -81,12 +100,14 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	}
 
 	dispose() {
-		this._onDidReceiveRuntimeMessage.dispose();
-		this._onDidChangeRuntimeState.dispose();
-		this._onDidEndSession.dispose();
+		this._disposables.forEach(disposable => disposable.dispose());
 	}
 
 	// Test helpers.
+
+	get state(): positron.RuntimeState {
+		return this._state;
+	}
 
 	setState(state: positron.RuntimeState) {
 		this._onDidChangeRuntimeState.fire(state);
@@ -102,7 +123,7 @@ function testLanguageRuntimeMetadata(): positron.LanguageRuntimeMetadata {
 		languageId: 'test',
 		languageName: 'Test',
 		languageVersion,
-		runtimeId: testRuntimeId,
+		runtimeId: TEST_RUNTIME_ID,
 		runtimeName: `Test ${runtimeShortName}`,
 		runtimePath: '/test',
 		runtimeShortName,
@@ -137,10 +158,8 @@ suite('NotebookSessionService', () => {
 	let session: positron.LanguageRuntimeSession;
 	let notebookUri2: vscode.Uri;
 	let session2: positron.LanguageRuntimeSession;
-	let startLanguageRuntimeStub: sinon.SinonStub;
 	let restartSessionStub: sinon.SinonStub;
 	let getNotebookSessionStub: sinon.SinonStub;
-	let shutdownSpy: sinon.SinonSpy;
 
 	let managerDisposable: vscode.Disposable;
 	let runtime: positron.LanguageRuntimeMetadata;
@@ -154,7 +173,7 @@ suite('NotebookSessionService', () => {
 		const registeredRuntime = await raceTimeout(
 			new Promise<positron.LanguageRuntimeMetadata>((resolve) => {
 				positron.runtime.onDidRegisterRuntime((runtimeMetadata) => {
-					if (runtimeMetadata.runtimeId === testRuntimeId) {
+					if (runtimeMetadata.runtimeId === TEST_RUNTIME_ID) {
 						resolve(runtimeMetadata);
 					}
 				});
@@ -175,28 +194,12 @@ suite('NotebookSessionService', () => {
 		disposables.push(notebookSessionService);
 
 		notebookUri = vscode.Uri.file('test/notebook');
-		session = new TestLanguageRuntimeSession(
-			runtime,
-			{ sessionId: 'testSession' } as positron.RuntimeSessionMetadata,
-		) as any;
-		disposables.push(session);
-
 		notebookUri2 = vscode.Uri.file('test/notebook2');
-		session2 = new TestLanguageRuntimeSession(
-			runtime,
-			{ sessionId: 'testSession2' } as positron.RuntimeSessionMetadata,
-		) as any;
-		disposables.push(session2);
-
-		// Stub startLanguageRuntime to return the appropriate mock session based on the notebook URI.
-		startLanguageRuntimeStub = sinon.stub(positron.runtime, 'startLanguageRuntime');
-		startLanguageRuntimeStub.withArgs(runtime.runtimeId, path.basename(notebookUri.fsPath), notebookUri).resolves(session);
-		startLanguageRuntimeStub.withArgs(runtime.runtimeId, path.basename(notebookUri2.fsPath), notebookUri2).resolves(session2);
 
 		// Stub the restartSession method to simulate restarting the session.
-		const sessionsBySessionId = new Map<string, TestLanguageRuntimeSession>(
-			[session, session2].map(s => [s.metadata.sessionId, s as any as TestLanguageRuntimeSession])
-		);
+		const sessionsBySessionId = new Map<string, TestLanguageRuntimeSession>();
+		// 	[session, session2].map(s => [s.metadata.sessionId, s as any as TestLanguageRuntimeSession])
+		// );
 		restartSessionStub = sinon.stub(positron.runtime, 'restartSession').callsFake(async (sessionId: string) => {
 			const session = sessionsBySessionId.get(sessionId);
 			assert(session, `Session with ID ${sessionId} not found`);
@@ -204,8 +207,6 @@ suite('NotebookSessionService', () => {
 		});
 
 		getNotebookSessionStub = sinon.stub(positron.runtime, 'getNotebookSession').resolves(undefined);
-
-		shutdownSpy = sinon.spy(session, 'shutdown');
 
 		positron.runtime.registerLanguageRuntimeManager(new TestLanguageRuntimeManager());
 	});
@@ -220,47 +221,49 @@ suite('NotebookSessionService', () => {
 	async function verifyStartRuntimeSession(
 		notebookUri: vscode.Uri,
 		runtimeId: string,
-		expectedSession: positron.LanguageRuntimeSession,
 	): Promise<positron.LanguageRuntimeSession> {
 		// Start a session for the notebook.
 		const session = await notebookSessionService.startRuntimeSession(notebookUri, runtimeId);
 
-		// Assert that the expected session was returned.
-		assert.equal(session, expectedSession);
+		// Check that the expected session was returned.
+		assert.ok(session instanceof TestLanguageRuntimeSession);
+		assert.equal(session.runtimeMetadata.runtimeId, TEST_RUNTIME_ID);
 
-		// Assert that the session was registered.
-		assert.equal(notebookSessionService.getNotebookSession(notebookUri), expectedSession);
+		// Check that the session was started.
+		assert.equal(session.state, positron.RuntimeState.Ready);
+
+		// Check that the session was registered with the notebook session service.
+		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 
 		return session;
 	}
 
 	test('start', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-
-		sinon.assert.calledOnce(startLanguageRuntimeStub);
+		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId);
 	});
 
 	test('start with a positron error', async () => {
-		// Override startLanguageRuntime to throw an error.
+		// Stub startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
-		startLanguageRuntimeStub.reset();
-		startLanguageRuntimeStub.rejects(error);
+		sinon.stub(positron.runtime, 'startLanguageRuntime').rejects(error);
 
-		// Assert that starting a session throws the expected error.
+		// Check that starting a session throws the expected error.
 		await assert.rejects(notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId), error);
 
-		// Assert that the session was not registered.
+		// Check that the session was not registered.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
 	test('start with existing session in positron', async () => {
-		// Stub getNotebookSession to return the mock session.
-		getNotebookSessionStub.resolves(session);
+		// Start a session outside of the notebook session service.
+		const existingSession = await positron.runtime.startLanguageRuntime(
+			runtime.runtimeId, path.basename(notebookUri.fsPath), notebookUri
+		);
 
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+		const session = await verifyStartRuntimeSession(notebookUri, runtime.runtimeId);
 
-		sinon.assert.calledOnce(getNotebookSessionStub);
-		sinon.assert.notCalled(startLanguageRuntimeStub);
+		// TODO: Next step is to debug why these two are not equal...
+		assert.equal(session, existingSession);
 	});
 
 	test('start after already started', async () => {
