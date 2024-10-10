@@ -91,11 +91,18 @@ class TestLanguageRuntimeSession implements positron.LanguageRuntimeSession {
 	}
 
 	async restart(): Promise<void> {
-		throw new Error('Not implemented.');
+		await this.shutdown(positron.RuntimeExitReason.Restart);
+		await this.start();
 	}
 
-	async shutdown(_exitReason: positron.RuntimeExitReason): Promise<void> {
-		this._onDidEndSession.fire({} as positron.LanguageRuntimeExit);
+	async shutdown(exitReason: positron.RuntimeExitReason): Promise<void> {
+		this._onDidChangeRuntimeState.fire(positron.RuntimeState.Exited);
+		this._onDidEndSession.fire({
+			runtime_name: this.runtimeMetadata.runtimeName,
+			exit_code: 0,
+			reason: exitReason,
+			message: '',
+		});
 	}
 
 	async forceQuit(): Promise<void> {
@@ -189,7 +196,7 @@ suite('NotebookSessionService', () => {
 			});
 		});
 		manager.registerTestLanguageRuntime();
-		const registeredRuntime = await raceTimeout(registeredRuntimePromise, 5_000);
+		const registeredRuntime = await raceTimeout(registeredRuntimePromise, 50);
 		assert(registeredRuntime, 'Timed out waiting for test runtime to be registered');
 		runtime = registeredRuntime;
 
@@ -209,10 +216,9 @@ suite('NotebookSessionService', () => {
 
 	async function verifyStartRuntimeSession(
 		notebookUri: vscode.Uri,
-		runtimeId: string,
-	): Promise<positron.LanguageRuntimeSession> {
+	): Promise<TestLanguageRuntimeSession> {
 		// Start a session for the notebook.
-		const session = await notebookSessionService.startRuntimeSession(notebookUri, runtimeId);
+		const session = await notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
 
 		// Check that the expected session was returned.
 		assert.ok(session instanceof TestLanguageRuntimeSession);
@@ -228,7 +234,7 @@ suite('NotebookSessionService', () => {
 	}
 
 	test('start', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId);
+		await verifyStartRuntimeSession(notebookUri);
 	});
 
 	test('start with a positron error', async () => {
@@ -243,63 +249,56 @@ suite('NotebookSessionService', () => {
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('start with existing session in positron', async () => {
-		// Start a session outside of the notebook session service.
+	test('start with existing session in positron', async () => {
+		// Start a session without the notebook session service's knowledge.
 		const existingSession = await positron.runtime.startLanguageRuntime(
 			runtime.runtimeId, path.basename(notebookUri.fsPath), notebookUri
 		);
 
-		const session = await verifyStartRuntimeSession(notebookUri, runtime.runtimeId);
+		const session = await verifyStartRuntimeSession(notebookUri);
 
-		// TODO: Next step is to debug why these two are not equal...
-		assert.equal(session, existingSession);
+		assert.equal(session.metadata.sessionId, existingSession.metadata.sessionId);
 	});
 
-	test.skip('start after already started', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-		startLanguageRuntimeStub.resetHistory();
+	test('start after already started', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Starting a session when one is already running should reject.
 		await assert.rejects(
 			notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId),
-			new Error('Tried to start a runtime for a notebook that already has one: /test/notebook')
+			new Error(`Tried to start a runtime for a notebook that already has one: ${notebookUri.fsPath}`)
 		);
-
-		sinon.assert.notCalled(startLanguageRuntimeStub);
 
 		// Assert that the session is still registered.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 	});
 
-	test.skip('start different notebooks concurrently', async () => {
+	test('start different notebooks concurrently', async () => {
 		// Start sessions for two different notebooks concurrently.
-		await Promise.all([
-			verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session),
-			verifyStartRuntimeSession(notebookUri2, runtime.runtimeId, session2),
+		const [session1, session2] = await Promise.all([
+			verifyStartRuntimeSession(notebookUri),
+			verifyStartRuntimeSession(notebookUri2),
 		]);
 
-		sinon.assert.calledTwice(startLanguageRuntimeStub);
+		// Assert that different sessions are returned.
+		assert.notEqual(session1.metadata.sessionId, session2.metadata.sessionId);
 	});
 
-	test.skip('start while starting', async () => {
+	test('start while starting', async () => {
 		// Start sessions for the same notebook twice concurrently.
-		const [startedSession1, startedSession2] = await Promise.all([
-			verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session),
-			verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session),
+		const [session1, session2] = await Promise.all([
+			verifyStartRuntimeSession(notebookUri),
+			verifyStartRuntimeSession(notebookUri),
 		]);
 
 		// Assert that the same session is returned.
-		assert.equal(startedSession1, startedSession2);
-
-		// The positron API should only be called once.
-		sinon.assert.calledOnce(startLanguageRuntimeStub);
+		assert.equal(session1.metadata.sessionId, session2.metadata.sessionId);
 	});
 
-	test.skip('start while starting and starting errors', async () => {
-		// Override startLanguageRuntime to throw an error.
+	test('start while starting and starting errors', async () => {
+		// Stub startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
-		startLanguageRuntimeStub.reset();
-		startLanguageRuntimeStub.rejects(error);
+		sinon.stub(positron.runtime, 'startLanguageRuntime').rejects(error);
 
 		// Attempt to start a session for the same notebook twice concurrently.
 		const startPromise1 = notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
@@ -309,33 +308,31 @@ suite('NotebookSessionService', () => {
 		await assert.rejects(startPromise1, error);
 		await assert.rejects(startPromise2, error);
 
-		sinon.assert.calledOnce(startLanguageRuntimeStub);
-
-		// Assert that the session was not registered with the notebook session service.
+		// Assert that no session was registered with the notebook session service.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('start while shutting down', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-		startLanguageRuntimeStub.resetHistory();
+	test('start while shutting down', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Shutdown the session for the notebook and start a session concurrently.
 		notebookSessionService.shutdownRuntimeSession(notebookUri);
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+		const newSession = await verifyStartRuntimeSession(notebookUri);
 
-		sinon.assert.calledOnce(shutdownSpy);
-		sinon.assert.calledOnce(startLanguageRuntimeStub);
-		sinon.assert.callOrder(shutdownSpy, startLanguageRuntimeStub);
+		// Check that the old session has exited.
+		assert.equal(session.state, positron.RuntimeState.Exited);
+
+		// Check that a new session is returned.
+		assert.notEqual(session.metadata.sessionId, newSession.metadata.sessionId);
 	});
 
 	// Related: https://github.com/posit-dev/positron/issues/4224
-	test.skip('start while shutting down and shutting down errors', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('start while shutting down and shutting down errors', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Stub the shutdown method to throw an error.
 		const error = new Error('Failed to shutdown runtime');
-		shutdownSpy.restore();
-		shutdownSpy = sinon.stub(session, 'shutdown').rejects(error);
+		sinon.stub(session, 'shutdown').rejects(error);
 
 		// Attempt to shutdown the runtime session for the notebook URI and start a new session concurrently.
 		notebookSessionService.shutdownRuntimeSession(notebookUri);
@@ -343,41 +340,28 @@ suite('NotebookSessionService', () => {
 		await assert.rejects(notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId), error);
 		// await notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
 
-		// // Verify that the session was shutdown before starting a new one.
-		// sinon.assert.callOrder(shutdownSpy, startLanguageRuntimeStub);
-
 		// // Verify that the notebook session service knows of the new session.
 		// assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 	});
 
-	test.skip('start while restarting', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('start while restarting', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Restart the runtime session for the notebook URI and start a new session concurrently.
-		verifyRestartRuntimeSession(notebookUri, session);
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-
-		// Verify that the restartSession method was called once.
-		sinon.assert.calledOnce(restartSessionStub);
-
-		// Verify that startLanguageRuntime was not called a second time.
-		sinon.assert.calledOnce(startLanguageRuntimeStub);
+		notebookSessionService.restartRuntimeSession(notebookUri);
+		await verifyStartRuntimeSession(notebookUri);
 	});
 
-	test.skip('start while restarting and restarting errors', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('start while restarting and restarting errors', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Stub the restartSession method to throw an error.
 		const error = new Error('Failed to restart runtime');
-		restartSessionStub.reset();
-		restartSessionStub.rejects(error);
+		sinon.stub(positron.runtime, 'restartSession').rejects(error);
 
 		// Attempt to restart the runtime session for the notebook URI and start a new session concurrently.
 		notebookSessionService.restartRuntimeSession(notebookUri);
 		await assert.rejects(notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId), error);
-
-		// Verify that the restartSession method was called once.
-		sinon.assert.calledOnce(restartSessionStub);
 
 		// Verify that the notebook session service did not record the session.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
@@ -387,48 +371,46 @@ suite('NotebookSessionService', () => {
 
 	// #region shutdownRuntimeSession
 
-	async function verifyShutdownRuntimeSession(notebookUri: vscode.Uri): Promise<void> {
+	async function verifyShutdownRuntimeSession(
+		notebookUri: vscode.Uri,
+		session: TestLanguageRuntimeSession,
+	): Promise<void> {
 		// Shutdown the runtime session for the notebook URI.
 		await notebookSessionService.shutdownRuntimeSession(notebookUri);
 
-		// Assert that the session's shutdown method was called.
-		sinon.assert.calledOnce(shutdownSpy);
+		// Check that the session has exited.
+		assert.equal(session.state, positron.RuntimeState.Exited);
 
-		// Verify that the session is removed from the active sessions map.
+		// Check that the session is deregistered with the notebook session service.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	}
 
-	test.skip('shutdown', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-		await verifyShutdownRuntimeSession(notebookUri);
+	test('shutdown', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
+		await verifyShutdownRuntimeSession(notebookUri, session);
 	});
 
-	test.skip('shutdown with a positron error', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('shutdown with a positron error', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Override the shutdown method to throw an error.
 		const error = new Error('Failed to shutdown runtime');
-		shutdownSpy.restore();
-		shutdownSpy = sinon.stub(session, 'shutdown').rejects(error);
+		sinon.stub(session, 'shutdown').rejects(error);
 
 		// Attempt to shutdown the session for the notebook and assert that it throws the expected error.
 		await assert.rejects(notebookSessionService.shutdownRuntimeSession(notebookUri), error);
 
-		sinon.assert.calledOnce(shutdownSpy);
-
 		// TODO: Should it be removed?
-		// Verify that the session is still recorded in the active sessions map.
+		// Check that the session is still recorded in the active sessions map.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 	});
 
-	test.skip('shutdown and time out waiting for session to end', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('shutdown and time out waiting for session to end', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Override the shutdown method to not emit onDidEndSession to trigger a timeout.
-		shutdownSpy.restore();
-		shutdownSpy = sinon.stub(session, 'shutdown').resolves();
+		sinon.stub(session, 'shutdown').resolves();
 
-		// Stub the shutdown method to simulate a timeout by not resolving.
 		const clock = sinon.useFakeTimers();
 		const shutdownPromise = notebookSessionService.shutdownRuntimeSession(notebookUri);
 
@@ -438,72 +420,58 @@ suite('NotebookSessionService', () => {
 		// Attempt to shutdown the runtime session and assert that it throws a timeout error.
 		await assert.rejects(
 			shutdownPromise,
-			new Error('Shutting down runtime  0.0.1 for notebook /test/notebook timed out'),
+			new Error(`Shutting down runtime ${runtime.runtimeName} for notebook ${notebookUri.fsPath} timed out`),
 		);
-
-		// Verify that the session's shutdown method was called.
-		sinon.assert.calledOnce(shutdownSpy);
 
 		// TODO: Should it still be removed from the map?
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
-		// // Verify that the session is removed from the active sessions map.
+		// // Check that the session is removed from the active sessions map.
 		// assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('shutdown after already shutdown', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('shutdown after already shutdown', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
-		// Shutdown the runtime session for the notebook URI.
-		await verifyShutdownRuntimeSession(notebookUri);
+		// Shutdown the session for the notebook.
+		await verifyShutdownRuntimeSession(notebookUri, session);
 
 		// TODO: This should probably *not* throw an error! See: https://github.com/posit-dev/positron/issues/4043
 		// Attempt to shutdown the runtime session again and assert that it throws an error.
 		await assert.rejects(
 			notebookSessionService.shutdownRuntimeSession(notebookUri),
-			new Error('Tried to shutdown runtime for notebook without a running runtime: /test/notebook'),
+			new Error(`Tried to shutdown runtime for notebook without a running runtime: ${notebookUri.fsPath}`),
 		);
 
-		// Verify that the session's shutdown method was called once.
-		sinon.assert.calledOnce(shutdownSpy);
+		// TODO: Do we need additional checks here?
 	});
 
-	test.skip('shutdown different notebooks concurrently', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-		await verifyStartRuntimeSession(notebookUri2, runtime.runtimeId, session2);
-
-		const shutdownSpy2 = sinon.spy(session2, 'shutdown');
+	test('shutdown different notebooks concurrently', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
+		const session2 = await verifyStartRuntimeSession(notebookUri2);
 
 		// Shutdown the runtime sessions for two different notebook URIs concurrently.
 		await Promise.all([
-			verifyShutdownRuntimeSession(notebookUri),
-			verifyShutdownRuntimeSession(notebookUri2),
+			verifyShutdownRuntimeSession(notebookUri, session),
+			verifyShutdownRuntimeSession(notebookUri2, session2),
 		]);
-
-		// Verify that the shutdown method was called once for each session.
-		sinon.assert.calledOnce(shutdownSpy);
-		sinon.assert.calledOnce(shutdownSpy2);
 	});
 
-	test.skip('shutdown while shutting down', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('shutdown while shutting down', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Shutdown the runtime session for the same notebook URI twice concurrently.
 		await Promise.all([
-			verifyShutdownRuntimeSession(notebookUri),
-			verifyShutdownRuntimeSession(notebookUri),
+			verifyShutdownRuntimeSession(notebookUri, session),
+			verifyShutdownRuntimeSession(notebookUri, session),
 		]);
-
-		// Verify that the session's shutdown method was called once.
-		sinon.assert.calledOnce(shutdownSpy);
 	});
 
-	test.skip('shutdown while shutting down and shutting down errors', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('shutdown while shutting down and shutting down errors', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Stub the shutdown method to throw an error.
 		const error = new Error('Failed to shutdown runtime');
-		shutdownSpy.restore();
-		shutdownSpy = sinon.stub(session, 'shutdown').rejects(error);
+		sinon.stub(session, 'shutdown').rejects(error);
 
 		// Attempt to shutdown the runtime session for the same notebook URI twice concurrently.
 		const shutdownPromise1 = notebookSessionService.shutdownRuntimeSession(notebookUri);
@@ -513,30 +481,28 @@ suite('NotebookSessionService', () => {
 		await assert.rejects(shutdownPromise1, error);
 		await assert.rejects(shutdownPromise2, error);
 
-		// Verify that the session's shutdown method was called once.
-		sinon.assert.calledOnce(shutdownSpy);
-
 		// Verify that the session is still recorded in the active sessions map.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 	});
 
-	test.skip('shutdown while starting', async () => {
+	test('shutdown while starting', async () => {
 		// Start the runtime session for the notebook URI and shutdown the session concurrently.
-		verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+		const sessionPromise = notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
 		await notebookSessionService.shutdownRuntimeSession(notebookUri);
 
-		// Verify that the session was started before shutting down.
-		sinon.assert.callOrder(startLanguageRuntimeStub, shutdownSpy);
+		const session = await sessionPromise;
+		assert.ok(session instanceof TestLanguageRuntimeSession);
+
+		assert.equal(session.state, positron.RuntimeState.Exited);
 
 		// Verify that the session is removed from the active sessions map.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('shutdown while starting and starting errors', async () => {
+	test('shutdown while starting and starting errors', async () => {
 		// Stub startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
-		startLanguageRuntimeStub.reset();
-		startLanguageRuntimeStub.rejects(error);
+		sinon.stub(positron.runtime, 'startLanguageRuntime').rejects(error);
 
 		// Attempt to start the runtime session for the notebook URI and shutdown the session concurrently.
 		notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
@@ -553,27 +519,23 @@ suite('NotebookSessionService', () => {
 		// assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('shutdown while restarting', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('shutdown while restarting', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Restart the runtime session for the notebook URI and shutdown the session concurrently.
-		verifyRestartRuntimeSession(notebookUri, session);
+		notebookSessionService.restartRuntimeSession(notebookUri);
 		await notebookSessionService.shutdownRuntimeSession(notebookUri);
-
-		// Verify that the session was restarted before shutting down.
-		sinon.assert.callOrder(restartSessionStub, shutdownSpy);
 
 		// Verify that the session is removed from the active sessions map.
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('shutdown while restarting and restarting errors', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('shutdown while restarting and restarting errors', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Stub the restartSession method to throw an error.
 		const error = new Error('Failed to restart runtime');
-		restartSessionStub.reset();
-		restartSessionStub.rejects(error);
+		sinon.stub(positron.runtime, 'restartSession').rejects(error);
 
 		// Attempt to restart the runtime session for the notebook URI and shutdown the session concurrently.
 		notebookSessionService.restartRuntimeSession(notebookUri);
@@ -581,9 +543,6 @@ suite('NotebookSessionService', () => {
 		// TODO: This should probably not error and should instead use commented out code below.
 		await assert.rejects(notebookSessionService.shutdownRuntimeSession(notebookUri), error);
 		// await notebookSessionService.shutdownRuntimeSession(notebookUri);
-
-		// // Verify that the session was restarted before shutting down.
-		// sinon.assert.callOrder(restartSessionStub, shutdownSpy);
 
 		// // Verify that the session is removed from the active sessions map.
 		// assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
@@ -595,35 +554,34 @@ suite('NotebookSessionService', () => {
 
 	async function verifyRestartRuntimeSession(
 		notebookUri: vscode.Uri,
-		expectedSession: positron.LanguageRuntimeSession,
 	): Promise<positron.LanguageRuntimeSession> {
 		// Restart the runtime session for the notebook URI.
-		const restartedSession = await notebookSessionService.restartRuntimeSession(notebookUri);
+		const session = await notebookSessionService.restartRuntimeSession(notebookUri);
 
-		// Assert that the restarted session matches the expected session.
-		assert.equal(restartedSession, expectedSession);
+		// Check that the expected session was returned.
+		assert.ok(session instanceof TestLanguageRuntimeSession);
+		assert.equal(session.runtimeMetadata.runtimeName, TestRuntimeName);
+
+		// Check that the session was started.
+		assert.equal(session.state, positron.RuntimeState.Ready);
 
 		// Verify that the notebook session service now knows of the new session.
-		assert.equal(notebookSessionService.getNotebookSession(notebookUri), expectedSession);
+		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 
-		return restartedSession;
+		return session;
 	}
 
-	test.skip('restart', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-		await verifyRestartRuntimeSession(notebookUri, session);
-
-		// Verify that the restartRuntimeSession method was called once.
-		sinon.assert.calledOnce(restartSessionStub);
+	test('restart', async () => {
+		await verifyStartRuntimeSession(notebookUri);
+		await verifyRestartRuntimeSession(notebookUri);
 	});
 
-	test.skip('restart with a positron error', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('restart with a positron error', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Stub the restartSession method to throw an error.
 		const error = new Error('Failed to restart runtime');
-		restartSessionStub.reset();
-		restartSessionStub.rejects(error);
+		sinon.stub(positron.runtime, 'restartSession').rejects(error);
 
 		// TODO: Maybe this shouldn't raise an error?
 		// Attempt to restart the runtime session for the notebook URI and assert that it throws the expected error.
@@ -635,16 +593,12 @@ suite('NotebookSessionService', () => {
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('restart and time out waiting for session to be ready', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('restart and time out waiting for session to be ready', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
-		// Override the restartSession method to simulate a timeout by not resolving.
-		restartSessionStub.restore();
-		restartSessionStub = sinon.stub(positron.runtime, 'restartSession').callsFake(async () => {
-			// Do nothing to simulate a timeout.
-		});
+		// Stub the restartSession method to not fire any events, simulating a timeout.
+		sinon.stub(positron.runtime, 'restartSession').resolves();
 
-		// Stub the setTimeout method to simulate a timeout.
 		const clock = sinon.useFakeTimers();
 		const restartPromise = notebookSessionService.restartRuntimeSession(notebookUri);
 
@@ -657,47 +611,35 @@ suite('NotebookSessionService', () => {
 			new Error('Timeout waiting for runtime to restart')
 		);
 
-		// Verify that the restartSession method was called.
-		sinon.assert.calledOnce(restartSessionStub);
-
 		// TODO: This should still be the session, not undefined
 		// // Verify that the notebook session service still knows of the original session.
 		// assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('restart with no running session for the notebook', async () => {
+	test('restart with no running session for the notebook', async () => {
 		// TODO: Maybe this shouldn't error and should just start the notebook?
 		// Attempt to restart the runtime session for a notebook URI with no running session.
 		await assert.rejects(
 			notebookSessionService.restartRuntimeSession(notebookUri),
-			new Error('Tried to restart runtime for notebook without a running runtime: //notebook')
+			new Error(`Tried to restart runtime for notebook without a running runtime: ${notebookUri.fsPath}`)
 		);
 
-		// Verify that the restartSession method was not called.
-		sinon.assert.notCalled(restartSessionStub);
+		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('restart after already restarted', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-
-		// Restart the runtime session for the notebook URI.
-		await verifyRestartRuntimeSession(notebookUri, session);
-
-		// Attempt to restart the runtime session again.
-		await verifyRestartRuntimeSession(notebookUri, session);
-
-		// Verify that the restartSession method was called twice.
-		sinon.assert.calledTwice(restartSessionStub);
+	test('restart after already restarted', async () => {
+		await verifyStartRuntimeSession(notebookUri);
+		await verifyRestartRuntimeSession(notebookUri);
+		await verifyRestartRuntimeSession(notebookUri);
 	});
 
-	test.skip('restart with a restartSession error', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('restart with a restartSession error', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Stub the restartSession method to throw an error.
 		const error = new Error('Failed to restart runtime');
-		restartSessionStub.reset();
-		restartSessionStub.rejects(error);
+		sinon.stub(positron.runtime, 'restartSession').rejects(error);
 
 		// Attempt to restart the runtime session for the notebook URI and assert that it throws the expected error.
 		await assert.rejects(notebookSessionService.restartRuntimeSession(notebookUri), error);
@@ -708,53 +650,41 @@ suite('NotebookSessionService', () => {
 		// assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
 	});
 
-	test.skip('restart different notebooks concurrently', async () => {
+	test('restart different notebooks concurrently', async () => {
 		await Promise.all([
-			verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session),
-			verifyStartRuntimeSession(notebookUri2, runtime.runtimeId, session2),
+			verifyStartRuntimeSession(notebookUri),
+			verifyStartRuntimeSession(notebookUri2),
 		]);
 
 		// Restart the runtime sessions for two different notebook URIs concurrently.
 		await Promise.all([
-			verifyRestartRuntimeSession(notebookUri, session),
-			verifyRestartRuntimeSession(notebookUri2, session2),
+			verifyRestartRuntimeSession(notebookUri),
+			verifyRestartRuntimeSession(notebookUri2),
 		]);
-
-		// Verify that the restartSession method was called twice.
-		sinon.assert.calledTwice(restartSessionStub);
 	});
 
-	test.skip('restart while restarting', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('restart while restarting', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Restart the runtime session for the same notebook URI twice concurrently.
-		await Promise.all([
-			verifyRestartRuntimeSession(notebookUri, session),
-			verifyRestartRuntimeSession(notebookUri, session),
+		const [session1, session2] = await Promise.all([
+			verifyRestartRuntimeSession(notebookUri),
+			verifyRestartRuntimeSession(notebookUri),
 		]);
 
-		// Verify that the restartSession method was called once.
-		sinon.assert.calledOnce(restartSessionStub);
+		assert.equal(session1.metadata.sessionId, session2.metadata.sessionId);
 	});
 
-	test.skip('restart while starting', async () => {
+	test('restart while starting', async () => {
 		// Start the runtime session for the notebook URI and restart the session concurrently.
-		verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
-		await verifyRestartRuntimeSession(notebookUri, session);
-
-		// Verify that startLanguageRuntime was called once and the restartSession method was not called.
-		sinon.assert.calledOnce(startLanguageRuntimeStub);
-		sinon.assert.notCalled(restartSessionStub);
-
-		// Verify that the notebook session service now knows of the new session.
-		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
+		notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
+		await verifyRestartRuntimeSession(notebookUri);
 	});
 
-	test.skip('restart while starting and starting errors', async () => {
+	test('restart while starting and starting errors', async () => {
 		// Stub startLanguageRuntime to throw an error.
 		const error = new Error('Failed to start runtime');
-		startLanguageRuntimeStub.reset();
-		startLanguageRuntimeStub.rejects(error);
+		sinon.stub(positron.runtime, 'startLanguageRuntime').rejects(error);
 
 		// Attempt to start the runtime session for the notebook URI and restart the session concurrently.
 		notebookSessionService.startRuntimeSession(notebookUri, runtime.runtimeId);
@@ -764,36 +694,26 @@ suite('NotebookSessionService', () => {
 		assert.equal(notebookSessionService.getNotebookSession(notebookUri), undefined);
 	});
 
-	test.skip('restart while shutting down', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('restart while shutting down', async () => {
+		await verifyStartRuntimeSession(notebookUri);
 
 		// Shutdown the runtime session for the notebook URI and restart the session concurrently.
 		notebookSessionService.shutdownRuntimeSession(notebookUri);
-		await verifyRestartRuntimeSession(notebookUri, session);
-
-		// Verify that the session was shutdown before restarting.
-		sinon.assert.callOrder(shutdownSpy, restartSessionStub);
-
-		// Verify that the notebook session service now knows of the new session.
-		assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
+		await verifyRestartRuntimeSession(notebookUri);
 	});
 
-	test.skip('restart while shutting down and shutting down errors', async () => {
-		await verifyStartRuntimeSession(notebookUri, runtime.runtimeId, session);
+	test('restart while shutting down and shutdown errors', async () => {
+		const session = await verifyStartRuntimeSession(notebookUri);
 
 		// Stub the shutdown method to throw an error.
 		const error = new Error('Failed to shutdown runtime');
-		shutdownSpy.restore();
-		shutdownSpy = sinon.stub(session, 'shutdown').rejects(error);
+		sinon.stub(session, 'shutdown').rejects(error);
 
 		// Attempt to shutdown the runtime session for the notebook URI and restart the session concurrently.
 		notebookSessionService.shutdownRuntimeSession(notebookUri);
 		// TODO: This should probably not error and should instead use commented out code below.
 		await assert.rejects(notebookSessionService.restartRuntimeSession(notebookUri), error);
 		// await notebookSessionService.restartRuntimeSession(notebookUri);
-
-		// // Verify that the session was shutdown before restarting.
-		// sinon.assert.callOrder(shutdownSpy, restartSessionStub);
 
 		// // Verify that the notebook session service knows of the session.
 		// assert.equal(notebookSessionService.getNotebookSession(notebookUri), session);
