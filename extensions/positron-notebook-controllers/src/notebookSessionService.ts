@@ -343,7 +343,12 @@ export class NotebookSessionService implements vscode.Disposable {
 		// If the notebook's session is still shutting down, wait for it to finish then start a new session.
 		const shuttingDownSessionPromise = this._shuttingDownSessionsByNotebookUri.get(notebookUri);
 		if (shuttingDownSessionPromise) {
-			return await this.doStartRuntimeSession(notebookUri, session.runtimeMetadata.runtimeId, false);
+			try {
+				await shuttingDownSessionPromise;
+			} catch (err) {
+				log.error(`Waiting for notebook runtime to shutdown before starting failed. Reason ${err}`);
+				throw err;
+			}
 		}
 
 		// Wait for the session to be ready, or for a timeout.

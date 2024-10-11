@@ -1048,11 +1048,8 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			state === RuntimeState.Exited) {
 			// The runtime has never been started, or is no longer running. Just
 			// tell it to start.
-			await this.startNewRuntimeSession(session.runtimeMetadata.runtimeId,
-				session.metadata.sessionName,
-				session.metadata.sessionMode,
-				session.metadata.notebookUri,
-				`'Restart Interpreter' command invoked`);
+			const sessionManager = await this.getManagerForRuntime(session.runtimeMetadata);
+			await this.doStartRuntimeSession(session, sessionManager, true);
 			return;
 		} else if (state === RuntimeState.Starting ||
 			state === RuntimeState.Restarting) {
