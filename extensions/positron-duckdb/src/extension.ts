@@ -122,12 +122,12 @@ export class DataExplorerRpcHandler {
 	constructor(private readonly db: DuckDBInstance) { }
 
 	private async runQuery(query: string): Promise<Table<any> | string> {
-		console.log(query);
+		// console.log(query);
 		try {
 			const result = await this.db.runQuery(query);
 			return result;
 		} catch (error) {
-			console.log(error);
+			console.error(error);
 			return JSON.stringify(error);
 		}
 	}
@@ -137,7 +137,7 @@ export class DataExplorerRpcHandler {
 		this._uriToTableName.set(params.uri, tableName);
 		const fileExt = extname(params.uri);
 
-		console.log(`Opening ${params.uri}`);
+		// console.log(`Opening ${params.uri}`);
 
 		let scanOperation;
 		switch (fileExt) {
