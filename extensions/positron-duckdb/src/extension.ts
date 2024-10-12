@@ -29,25 +29,26 @@ import {
 	TableSchema
 } from './interfaces';
 import * as duckdb from '@duckdb/duckdb-wasm';
+import duckdb_wasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm';
+import duckdb_worker_mvp from '@duckdb/duckdb-wasm/dist/duckdb-node-mvp.worker.cjs';
+import duckdb_wasm_eh from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm';
+import duckdb_worker_eh from '@duckdb/duckdb-wasm/dist/duckdb-node-eh.worker.cjs';
 import Worker from 'web-worker';
-import { resolve, dirname, basename, extname } from 'path';
-import { Schema, Table, Vector } from 'apache-arrow';
+import { dirname, basename, extname } from 'path';
+import { Table } from 'apache-arrow';
 
 class DuckDBInstance {
 	constructor(private db: duckdb.AsyncDuckDB, private con: duckdb.AsyncDuckDBConnection) { }
 
 	static async create(): Promise<DuckDBInstance> {
-		const modPath = require.resolve('@duckdb/duckdb-wasm');
-		const dist_path = dirname(modPath);
-
 		const MANUAL_BUNDLES = {
 			mvp: {
-				mainModule: resolve(dist_path, './duckdb-mvp.wasm'),
-				mainWorker: resolve(dist_path, './duckdb-node-mvp.worker.cjs')
+				mainModule: duckdb_wasm,
+				mainWorker: duckdb_worker_mvp,
 			},
 			eh: {
-				mainModule: resolve(dist_path, './duckdb-eh.wasm'),
-				mainWorker: resolve(dist_path, './duckdb-node-eh.worker.cjs')
+				mainModule: duckdb_wasm_eh,
+				mainWorker: duckdb_worker_eh,
 			}
 		};
 
