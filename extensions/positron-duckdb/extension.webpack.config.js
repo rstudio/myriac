@@ -57,7 +57,7 @@ module.exports = withDefaults({
 	plugins: [
 		...withDefaults.nodePlugins(__dirname),
 		new IgnorePlugin({
-			resourceRegExp: /duckdb-node\.ts$/
+			resourceRegExp: /.*duckdb-node\.ts$/
 		})
 	]
 });

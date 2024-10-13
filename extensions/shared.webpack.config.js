@@ -35,6 +35,18 @@ function withNodeDefaults(/**@type WebpackConfig & { context: string }*/extConfi
 			mainFields: ['module', 'main'],
 			extensions: ['.ts', '.js'] // support ts-files and js-files
 		},
+		stats: {
+			all: true,  // Show everything, very verbose
+			warnings: true,
+			errors: true,
+			timings: true,
+			reasons: true,
+			errorDetails: true,  // Show error details
+			modules: true,  // Show modules being bundled
+			moduleTrace: true,  // Show module traces
+			usedExports: true,  // Show used exports
+			performance: true,  // Show performance hints
+		},
 		module: {
 			rules: [{
 				test: /\.ts$/,

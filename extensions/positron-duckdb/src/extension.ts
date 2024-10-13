@@ -32,7 +32,6 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import Worker from 'web-worker';
 import { basename, extname } from 'path';
 import { Table } from 'apache-arrow';
-import { getDuckDBNodeBundles } from './duckdb-node';
 
 class DuckDBInstance {
 	constructor(readonly db: duckdb.AsyncDuckDB, readonly con: duckdb.AsyncDuckDBConnection) { }
@@ -55,9 +54,10 @@ class DuckDBInstance {
 	// Method to dynamically load the bundles based on environment
 	private static async getBundles(): Promise<duckdb.DuckDBBundles> {
 		if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-			return getDuckDBNodeBundles();
+			const duckdb_node = require('./duckdb-node');
+			return duckdb_node.getDuckDBNodeBundles();
 		} else {
-			const duckdb_webpack = await import('./duckdb-webpack');
+			const duckdb_webpack = require('./duckdb-webpack');
 			return duckdb_webpack.getDuckDBWebpackBundles();
 		}
 	}
