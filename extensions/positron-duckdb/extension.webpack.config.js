@@ -7,6 +7,7 @@
 
 'use strict';
 
+const { IgnorePlugin } = require('webpack');
 const withDefaults = require('../shared.webpack.config');
 
 module.exports = withDefaults({
@@ -21,32 +22,42 @@ module.exports = withDefaults({
 	resolve: {
 		extensions: ['.ts', '.js', '.wasm'],  // Ensure WebAssembly files are recognized
 	},
+	output: {
+		webassemblyModuleFilename: 'dist/[hash].wasm'
+	},
 	module: {
 		rules: [
 			{
-				test: /\.wasm$/,  // Match .wasm files
-				type: 'javascript/auto',  // Required for WebAssembly
-				use: {
-					loader: 'file-loader',
-					options: {
-						name: '[name].[hash].[ext]',  // Customize the output file name
-						outputPath: 'wasm/',  // Output directory for WebAssembly files
-					},
-				},
+				test: /\.ts$/,
+				exclude: /node_modules/,
+				use: [
+					{
+						loader: 'ts-loader',
+						options: {
+							compilerOptions: {
+								'sourceMap': true,
+							},
+							onlyCompileBundledFiles: true,
+						},
+					}
+				]
 			},
 			{
-				test: /\.worker\.cjs$/,  // Match worker files with .cjs extension
-				use: {
-					loader: 'file-loader',  // Load the worker files as separate chunks
-					options: {
-						name: '[name].[hash].[ext]',  // Customize the output worker file name
-						outputPath: 'workers/',  // Output directory for worker files
-					},
+				test: /.*\.wasm$/,
+				type: 'asset/resource',
+				generator: {
+					filename: 'dist/[name].[contenthash][ext]',
 				},
-			},
+			}
 		],
 	},
 	experiments: {
 		asyncWebAssembly: true,  // Enable WebAssembly support in Webpack
 	},
+	plugins: [
+		...withDefaults.nodePlugins(__dirname),
+		new IgnorePlugin({
+			resourceRegExp: /duckdb-node\.ts$/
+		})
+	]
 });

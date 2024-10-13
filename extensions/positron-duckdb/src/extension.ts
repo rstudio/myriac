@@ -29,30 +29,17 @@ import {
 	TableSchema
 } from './interfaces';
 import * as duckdb from '@duckdb/duckdb-wasm';
-import duckdb_wasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm';
-import duckdb_worker_mvp from '@duckdb/duckdb-wasm/dist/duckdb-node-mvp.worker.cjs';
-import duckdb_wasm_eh from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm';
-import duckdb_worker_eh from '@duckdb/duckdb-wasm/dist/duckdb-node-eh.worker.cjs';
 import Worker from 'web-worker';
-import { dirname, basename, extname } from 'path';
+import { basename, extname } from 'path';
 import { Table } from 'apache-arrow';
+import { getDuckDBNodeBundles } from './duckdb-node';
 
 class DuckDBInstance {
-	constructor(private db: duckdb.AsyncDuckDB, private con: duckdb.AsyncDuckDBConnection) { }
+	constructor(readonly db: duckdb.AsyncDuckDB, readonly con: duckdb.AsyncDuckDBConnection) { }
 
 	static async create(): Promise<DuckDBInstance> {
-		const MANUAL_BUNDLES = {
-			mvp: {
-				mainModule: duckdb_wasm,
-				mainWorker: duckdb_worker_mvp,
-			},
-			eh: {
-				mainModule: duckdb_wasm_eh,
-				mainWorker: duckdb_worker_eh,
-			}
-		};
-
-		const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
+		const bundles = await this.getBundles();
+		const bundle = await duckdb.selectBundle(bundles);
 		const logger = new duckdb.VoidLogger();
 
 		const worker = new Worker(bundle.mainWorker);
@@ -63,6 +50,16 @@ class DuckDBInstance {
 		const con = await db.connect();
 		await con.query('LOAD icu; SET TIMEZONE=\'UTC\';');
 		return new DuckDBInstance(db, con);
+	}
+
+	// Method to dynamically load the bundles based on environment
+	private static async getBundles(): Promise<duckdb.DuckDBBundles> {
+		if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+			return getDuckDBNodeBundles();
+		} else {
+			const duckdb_webpack = await import('./duckdb-webpack');
+			return duckdb_webpack.getDuckDBWebpackBundles();
+		}
 	}
 
 	public async runQuery(query: string) {
