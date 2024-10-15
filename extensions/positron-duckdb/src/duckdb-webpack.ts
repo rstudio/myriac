@@ -8,7 +8,7 @@ import duckdb_worker_mvp from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worke
 import duckdb_wasm_eh from '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm';
 import duckdb_worker_eh from '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js';
 
-function getDuckDBWebpackBundles() {
+export function getDuckDBWebpackBundles() {
 	return {
 		mvp: {
 			mainModule: duckdb_wasm_mvp,

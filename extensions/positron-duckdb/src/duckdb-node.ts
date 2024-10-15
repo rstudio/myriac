@@ -6,26 +6,16 @@
 import { resolve, dirname } from 'path';
 
 export function getDuckDBNodeBundles() {
-	// const modPath = require.resolve('@duckdb/duckdb-wasm');
-	// const dist_path = dirname(modPath);
-	// return {
-	// 	mvp: {
-	// 		mainModule: resolve(dist_path, './duckdb-mvp.wasm'),
-	// 		mainWorker: resolve(dist_path, './duckdb-node-mvp.worker.cjs')
-	// 	},
-	// 	eh: {
-	// 		mainModule: resolve(dist_path, './duckdb-eh.wasm'),
-	// 		mainWorker: resolve(dist_path, './duckdb-node-eh.worker.cjs')
-	// 	}
-	// };
+	const modPath = require.resolve('@duckdb/duckdb-wasm');
+	const dist_path = dirname(modPath);
 	return {
 		mvp: {
-			mainModule: 'foo',
-			mainWorker: 'bar'
+			mainModule: resolve(dist_path, './duckdb-mvp.wasm'),
+			mainWorker: resolve(dist_path, './duckdb-node-mvp.worker.cjs')
 		},
 		eh: {
-			mainModule: 'foo',
-			mainWorker: 'bar'
+			mainModule: resolve(dist_path, './duckdb-eh.wasm'),
+			mainWorker: resolve(dist_path, './duckdb-node-eh.worker.cjs')
 		}
-	}
+	};
 }

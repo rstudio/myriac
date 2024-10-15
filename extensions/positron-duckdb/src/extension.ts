@@ -44,7 +44,7 @@ class DuckDBInstance {
 		const worker = new Worker(bundle.mainWorker);
 
 		const db = new duckdb.AsyncDuckDB(logger, worker);
-		await db.instantiate(bundle.mainModule);
+		await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
 		const con = await db.connect();
 		await con.query('LOAD icu; SET TIMEZONE=\'UTC\';');
@@ -54,10 +54,10 @@ class DuckDBInstance {
 	// Method to dynamically load the bundles based on environment
 	private static async getBundles(): Promise<duckdb.DuckDBBundles> {
 		if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-			const duckdb_node = require('./duckdb-node');
+			const duckdb_node = await import('./duckdb-node');
 			return duckdb_node.getDuckDBNodeBundles();
 		} else {
-			const duckdb_webpack = require('./duckdb-webpack');
+			const duckdb_webpack = await import('./duckdb-webpack');
 			return duckdb_webpack.getDuckDBWebpackBundles();
 		}
 	}
