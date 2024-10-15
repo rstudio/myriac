@@ -17,47 +17,5 @@ module.exports = withDefaults({
 	},
 	node: {
 		__dirname: false
-	},
-	// Wasm support
-	resolve: {
-		extensions: ['.ts', '.js', '.wasm'],  // Ensure WebAssembly files are recognized
-	},
-	output: {
-		webassemblyModuleFilename: 'dist/[hash].wasm'
-	},
-	module: {
-		rules: [
-			{
-				test: /\.ts$/,
-				exclude: /node_modules/,
-				use: [
-					{
-						loader: 'ts-loader',
-						options: {
-							compilerOptions: {
-								'sourceMap': true,
-							},
-							onlyCompileBundledFiles: true,
-						},
-					}
-				]
-			},
-			{
-				test: /.*\.wasm$/,
-				type: 'asset/resource',
-				generator: {
-					filename: 'dist/[name].[contenthash][ext]',
-				},
-			}
-		],
-	},
-	experiments: {
-		asyncWebAssembly: true,  // Enable WebAssembly support in Webpack
-	},
-	plugins: [
-		...withDefaults.nodePlugins(__dirname),
-		new IgnorePlugin({
-			resourceRegExp: /.*duckdb-node\.ts$/
-		})
-	]
+	}
 });

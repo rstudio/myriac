@@ -14,12 +14,12 @@
   dependencies:
     "@jridgewell/trace-mapping" "0.3.9"
 
-"@duckdb/duckdb-wasm@1.28.1-dev242.0":
-  version "1.28.1-dev242.0"
-  resolved "https://registry.yarnpkg.com/@duckdb/duckdb-wasm/-/duckdb-wasm-1.28.1-dev242.0.tgz#00f3927b2a4a2f9a9684110cc4b0b1ae809d5cbf"
-  integrity sha512-gXyK15RCJ4kXBGDRLSvEqviGOgjMQuVvqzXrmbnQlw7jGaQUhYV4TH+KTaFVDMiCxVjaoyvT4NXF5AkalN2gdw==
+"@duckdb/duckdb-wasm@1.29.0":
+  version "1.29.0"
+  resolved "https://registry.yarnpkg.com/@duckdb/duckdb-wasm/-/duckdb-wasm-1.29.0.tgz#59540ee66decdf3d2df580f2ea98dcf0c630c8cb"
+  integrity sha512-8Zq7vafQuIz9gklC/9375KE38UlkaS2n8+yvG+/JK7irm3DjwYNJHL4xfplIj0bSHFIg6we5XhWYFqtE/vO3+Q==
   dependencies:
-    apache-arrow "^16.0.0"
+    apache-arrow "^17.0.0"
 
 "@eslint-community/eslint-utils@^4.2.0":
   version "4.4.0"
@@ -111,7 +111,7 @@
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
 
-"@swc/helpers@^0.5.10":
+"@swc/helpers@^0.5.10", "@swc/helpers@^0.5.11":
   version "0.5.13"
   resolved "https://registry.yarnpkg.com/@swc/helpers/-/helpers-0.5.13.tgz#33e63ff3cd0cade557672bd7888a39ce7d115a8c"
   integrity sha512-UoKGxQ3r5kYI9dALKJapMmuK+1zWM/H17Z1+iwnNmzcJRnfFuevZs375TA5rW31pu4BS4NoSy1fRsexDXfWn5w==
@@ -192,6 +192,13 @@
   version "20.16.10"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-20.16.10.tgz#0cc3fdd3daf114a4776f54ba19726a01c907ef71"
   integrity sha512-vQUKgWTjEIRFCvK6CyriPH3MZYiYlNy0fKiEYHWbcoWLEgs4opurGGKlebrTLqdSMIbXImH6XExNiIyNUv3WpA==
+  dependencies:
+    undici-types "~6.19.2"
+
+"@types/node@^20.13.0":
+  version "20.16.11"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-20.16.11.tgz#9b544c3e716b1577ac12e70f9145193f32750b33"
+  integrity sha512-y+cTCACu92FyA5fgQSAI8A1H429g7aSK2HsO7K4XYUWc4dY5IUz55JSDIYT6/VsOLfGy8vmvQYC2hfb0iF16Uw==
   dependencies:
     undici-types "~6.19.2"
 
@@ -377,6 +384,21 @@ apache-arrow@^16.0.0:
     "@types/command-line-args" "^5.2.3"
     "@types/command-line-usage" "^5.0.4"
     "@types/node" "^20.12.7"
+    command-line-args "^5.2.1"
+    command-line-usage "^7.0.1"
+    flatbuffers "^24.3.25"
+    json-bignum "^0.0.3"
+    tslib "^2.6.2"
+
+apache-arrow@^17.0.0:
+  version "17.0.0"
+  resolved "https://registry.yarnpkg.com/apache-arrow/-/apache-arrow-17.0.0.tgz#73d98566c86352c9a0314c03890dbd7211073827"
+  integrity sha512-X0p7auzdnGuhYMVKYINdQssS4EcKec9TCXyez/qtJt32DrIMGbzqiaMiQ0X6fQlQpw8Fl0Qygcv4dfRAr5Gu9Q==
+  dependencies:
+    "@swc/helpers" "^0.5.11"
+    "@types/command-line-args" "^5.2.3"
+    "@types/command-line-usage" "^5.0.4"
+    "@types/node" "^20.13.0"
     command-line-args "^5.2.1"
     command-line-usage "^7.0.1"
     flatbuffers "^24.3.25"
