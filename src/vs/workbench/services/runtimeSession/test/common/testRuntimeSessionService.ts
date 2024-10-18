@@ -91,6 +91,7 @@ export function createTestLanguageRuntimeMetadata(
 }
 
 export interface IStartTestLanguageRuntimeSessionOptions {
+	runtime?: ILanguageRuntimeMetadata;
 	sessionName?: string;
 	sessionMode?: LanguageRuntimeSessionMode;
 	notebookUri?: URI;
@@ -102,8 +103,8 @@ export async function startTestLanguageRuntimeSession(
 	disposables: Pick<DisposableStore, 'add'>,
 	options?: IStartTestLanguageRuntimeSessionOptions,
 ): Promise<TestLanguageRuntimeSession> {
-	// Get the test runtime, if it's already been registered.
-	const runtime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
+	// Get or create the runtime.
+	const runtime = options?.runtime ?? createTestLanguageRuntimeMetadata(instantiationService, disposables);
 
 	// Start the session.
 	const runtimeSessionService = instantiationService.get(IRuntimeSessionService);

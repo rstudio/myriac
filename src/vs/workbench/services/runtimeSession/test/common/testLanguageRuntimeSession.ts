@@ -142,7 +142,13 @@ export class TestLanguageRuntimeSession extends Disposable implements ILanguageR
 	}
 
 	async start(): Promise<ILanguageRuntimeInfo> {
-		this._onDidChangeRuntimeState.fire(RuntimeState.Ready);
+		this._onDidChangeRuntimeState.fire(RuntimeState.Starting);
+
+		// Complete the startup on the next tick, trying to match real runtime behavior.
+		setTimeout(() => {
+			this._onDidChangeRuntimeState.fire(RuntimeState.Ready);
+		}, 0);
+
 		return {
 			banner: 'Test runtime started',
 			implementation_version: this.runtimeMetadata.runtimeVersion,
