@@ -47,8 +47,6 @@ export function createRuntimeServices(
 	return instantiationService;
 }
 
-const TEST_LANGUAGE_ID = 'test';
-
 export function createTestLanguageRuntimeMetadata(
 	instantiationService: TestInstantiationService,
 	disposables: Pick<DisposableStore, 'add'>,
@@ -56,20 +54,14 @@ export function createTestLanguageRuntimeMetadata(
 	const languageRuntimeService = instantiationService.get(ILanguageRuntimeService);
 	const runtimeSessionService = instantiationService.get(IRuntimeSessionService);
 
-	// Get the test runtime, if it's already been registered.
-	let runtime = languageRuntimeService.registeredRuntimes.find(r => r.languageId === TEST_LANGUAGE_ID);
-	if (runtime) {
-		return runtime;
-	}
-
 	// Register the test runtime.
 	const languageName = 'Test';
 	const languageVersion = '0.0.1';
-	runtime = {
+	const runtime = {
 		extensionId: new ExtensionIdentifier('test-extension'),
 		base64EncodedIconSvg: '',
 		extraRuntimeData: {},
-		languageId: TEST_LANGUAGE_ID,
+		languageId: 'test',
 		languageName,
 		languageVersion,
 		runtimeId: generateUuid(),
