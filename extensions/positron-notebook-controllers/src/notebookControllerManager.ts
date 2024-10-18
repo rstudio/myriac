@@ -7,14 +7,20 @@ import * as positron from 'positron';
 import * as vscode from 'vscode';
 import { log } from './extension';
 import { NotebookController } from './notebookController';
-import { NotebookSessionService } from './notebookSessionService';
+import { INotebookSessionDidChangeEvent, NotebookSessionService } from './notebookSessionService';
 
 /**
  * Manages notebook controllers.
  */
 export class NotebookControllerManager implements vscode.Disposable {
+	private readonly _disposables = new Array<vscode.Disposable>();
+
 	/** Notebook controllers keyed by language runtime ID. */
 	public readonly controllers = new Map<string, NotebookController>();
+
+	private readonly _onDidChangeNotebookSession = new vscode.EventEmitter<INotebookSessionDidChangeEvent>();
+
+	public readonly onDidChangeNotebookSession = this._onDidChangeNotebookSession.event;
 
 	/**
 	 *
@@ -35,6 +41,11 @@ export class NotebookControllerManager implements vscode.Disposable {
 		const controller = new NotebookController(runtimeMetadata, this._notebookSessionService);
 		this.controllers.set(runtimeId, controller);
 		log.info(`Registered notebook controller for runtime: ${runtimeId}`);
+
+		this._disposables.push(
+			controller,
+			controller.onDidChangeNotebookSession(e => this._onDidChangeNotebookSession.fire(e))
+		);
 	}
 
 	/**
@@ -103,6 +114,6 @@ export class NotebookControllerManager implements vscode.Disposable {
 	}
 
 	dispose(): void {
-		this.controllers.forEach(c => c.dispose());
+		this._disposables.forEach(d => d.dispose());
 	}
 }

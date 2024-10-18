@@ -11,7 +11,7 @@ export function delay(ms: number) {
 	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function getNotebookSession(notebookUri: vscode.Uri): Promise<positron.LanguageRuntimeSession | undefined> {
+export async function getRunningNotebookSession(notebookUri: vscode.Uri): Promise<positron.LanguageRuntimeSession | undefined> {
 	const allSessions = await positron.runtime.getSessions();
 	const activeSessions = allSessions.filter(
 		s => s.metadata.notebookUri?.toString() === notebookUri.toString() &&
