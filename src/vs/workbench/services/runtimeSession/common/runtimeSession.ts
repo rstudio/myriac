@@ -442,6 +442,26 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 						`for the ${metadata.languageName} language.`);
 				}
 			}
+		} else if (sessionMode === LanguageRuntimeSessionMode.Notebook) {
+			if (!notebookUri) {
+				throw new Error('A notebook URI must be provided when starting a notebook session.');
+			}
+			const runningLanguageRuntime = this._notebookSessionsByNotebookUri.get(notebookUri);
+			if (runningLanguageRuntime) {
+				const metadata = runningLanguageRuntime.runtimeMetadata;
+				if (metadata.runtimeId === runtimeId) {
+					// If the runtime that is running is the one we were just asked
+					// to start, we're technically in good shape since the runtime
+					// is already running!
+					return runningLanguageRuntime.sessionId;
+				} else {
+					throw new Error(`A session for ` +
+						`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+						`cannot be started because a session for ` +
+						`${formatLanguageRuntimeMetadata(metadata)} is already running ` +
+						`for the ${metadata.languageName} language.`);
+				}
+			}
 		}
 
 		// If the workspace is not trusted, defer starting the runtime until the

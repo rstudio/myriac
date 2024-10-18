@@ -8,6 +8,7 @@ import { NotebookSessionService } from './notebookSessionService';
 import { JUPYTER_NOTEBOOK_TYPE } from './constants';
 import { log } from './extension';
 import { ResourceMap } from './map';
+import { getNotebookSession } from './utils';
 
 /** The type of a Jupyter notebook cell output. */
 enum NotebookCellOutputType {
@@ -91,7 +92,7 @@ export class NotebookController implements vscode.Disposable {
 	 */
 	private async startRuntimeSession(notebook: vscode.NotebookDocument): Promise<positron.LanguageRuntimeSession> {
 		try {
-			return await this._notebookSessionService.startRuntimeSession(notebook.uri, this._runtimeMetadata.runtimeId);
+			return await positron.runtime.startLanguageRuntime(this._runtimeMetadata.runtimeId, notebook.uri.path, notebook.uri);
 		} catch (err) {
 			const retry = vscode.l10n.t('Retry');
 			const selection = await vscode.window.showErrorMessage(
@@ -159,7 +160,7 @@ export class NotebookController implements vscode.Disposable {
 		}
 
 		// Get the notebook's session.
-		let session = this._notebookSessionService.getNotebookSession(notebook.uri);
+		let session = await getNotebookSession(notebook.uri);
 
 		// No session has been started for this notebook, start one.
 		if (!session) {
