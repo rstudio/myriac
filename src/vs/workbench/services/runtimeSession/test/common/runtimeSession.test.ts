@@ -92,7 +92,7 @@ suite('Positron - RuntimeSessionService', () => {
 	async function testStartFiresOnWillStartSession(
 		notebookUri?: URI,
 		expectedState?: IServiceState,
-	): Promise<void> {
+	) {
 		const promise = startSession(notebookUri);
 
 		let error: Error | undefined;
@@ -104,8 +104,8 @@ suite('Positron - RuntimeSessionService', () => {
 				}
 				assert.equal(session.getRuntimeState(), RuntimeState.Uninitialized);
 				assertServiceState(expectedState);
-			} catch (error) {
-				error = error;
+			} catch (e) {
+				error = e;
 			}
 		});
 		disposables.add(runtimeSessionService.onWillStartSession(target));
@@ -118,12 +118,43 @@ suite('Positron - RuntimeSessionService', () => {
 		assert.ifError(error);
 	}
 
+	async function testStartFiresOnDidStartRuntime(
+		notebookUri?: URI,
+		expectedState?: IServiceState,
+	) {
+		const promise = startSession(notebookUri);
+
+		let error: Error | undefined;
+		const target = sinon.stub<[e: ILanguageRuntimeSession]>().callsFake(session => {
+			try {
+				assert.equal(session.getRuntimeState(), RuntimeState.Starting);
+				assertServiceState(expectedState);
+			} catch (e) {
+				error = e;
+			}
+		});
+		disposables.add(runtimeSessionService.onDidStartRuntime(target));
+
+		const session = disposables.add(await promise);
+
+		sinon.assert.calledOnceWithExactly(target, session);
+		assert.ifError(error);
+	}
+
 	test('start console session fires onWillStartSession', async () => {
 		testStartFiresOnWillStartSession(undefined, { hasStartingOrRunningConsole: true });
 	});
 
 	test('start notebook session fires onWillStartSession', async () => {
 		testStartFiresOnWillStartSession(notebookUri);
+	});
+
+	test('start console session fires onDidStartRuntime', async () => {
+		testStartFiresOnDidStartRuntime();
+	});
+
+	test('start notebook session fires onDidStartRuntime', async () => {
+		testStartFiresOnDidStartRuntime(notebookUri);
 	});
 
 	test.skip('start a new console session', async () => {
