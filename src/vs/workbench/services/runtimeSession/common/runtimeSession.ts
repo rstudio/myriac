@@ -400,6 +400,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		sessionMode: LanguageRuntimeSessionMode,
 		notebookUri: URI | undefined,
 		source: string): Promise<string> {
+
 		// See if we are already starting the requested session. If we
 		// are, return the promise that resolves when the session is ready to
 		// use. This makes it possible for multiple requests to start the same
@@ -418,12 +419,14 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 
 		// If there is already a runtime starting for the language, throw an error.
 		if (sessionMode === LanguageRuntimeSessionMode.Console) {
+			// TODO: Is this possible given the check at the start of this function?
 			const startingLanguageRuntime = this._startingConsolesByLanguageId.get(
 				languageRuntime.languageId);
 			if (startingLanguageRuntime) {
 				throw new Error(`Session for language runtime ${formatLanguageRuntimeMetadata(languageRuntime)} cannot be started because language runtime ${formatLanguageRuntimeMetadata(startingLanguageRuntime)} is already starting for the language. Request source: ${source}`);
 			}
 
+			// TODO: This comment is misleading
 			// If there is already a runtime running for the language, throw an error.
 			const runningLanguageRuntime =
 				this._consoleSessionsByLanguageId.get(languageRuntime.languageId);
