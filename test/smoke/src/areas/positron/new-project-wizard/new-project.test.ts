@@ -7,7 +7,7 @@ import { expect } from '@playwright/test';
 import { Application, PositronPythonFixtures, ProjectType, ProjectWizardNavigateAction } from '../../../../../automation';
 import { setupAndStartApp } from '../../../test-runner/test-hooks';
 
-describe('New Project Wizard', () => {
+describe('New Project Wizard #web', () => {
 	setupAndStartApp();
 
 	describe('Python - New Project Wizard', () => {
