@@ -153,7 +153,7 @@ suite('Positron - RuntimeSessionService', () => {
 		assert.ifError(error);
 	}
 
-	suite('startSession', () => {
+	suite('Start', () => {
 		test('start console details', async () => {
 			await testStartSessionDetails();
 		});
@@ -249,6 +249,16 @@ suite('Positron - RuntimeSessionService', () => {
 					`be started because a console for ${formatLanguageRuntimeMetadata(runtime)} ` +
 					`is already running for the ${runtime.languageName} language.`),
 			);
+		});
+
+		test('start notebook while another runtime is running for the notebook', async () => {
+			await startSession(notebookUri);
+
+			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
+			await assert.rejects(startSession(notebookUri, anotherRuntime),
+				new Error(`A session for ${formatLanguageRuntimeMetadata(anotherRuntime)} cannot ` +
+					`be started because a session for ${formatLanguageRuntimeMetadata(runtime)} ` +
+					`is already running for the notebook '${notebookUri.fsPath}'.`));
 		});
 
 		test('start session encounters session.start() error', async () => {

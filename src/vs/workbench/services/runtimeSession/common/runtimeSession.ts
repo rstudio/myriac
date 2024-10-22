@@ -462,7 +462,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 						`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
 						`cannot be started because a session for ` +
 						`${formatLanguageRuntimeMetadata(metadata)} is already running ` +
-						`for the ${metadata.languageName} language.`);
+						`for the notebook '${notebookUri.fsPath}'.`);
 				}
 			}
 		}
