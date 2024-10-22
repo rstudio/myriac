@@ -78,7 +78,10 @@ export class NotebookController implements vscode.Disposable {
 					this.startRuntimeSession(e.notebook),
 				]);
 			} else {
-				await this._notebookSessionService.shutdownRuntimeSession(e.notebook.uri);
+				const session = await getRunningNotebookSession(e.notebook.uri);
+				if (session) {
+					await session.shutdown(positron.RuntimeExitReason.Shutdown);
+				}
 				this._onDidChangeNotebookSession.fire({ notebookUri: e.notebook.uri, session: undefined });
 			}
 		}));
