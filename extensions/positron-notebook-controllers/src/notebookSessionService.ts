@@ -5,10 +5,10 @@
 
 import * as positron from 'positron';
 import * as vscode from 'vscode';
-import * as path from 'path';
+// import * as path from 'path';
 import { log } from './extension';
 import { ResourceMap } from './map';
-import { delay } from './utils';
+// import { delay } from './utils';
 
 export interface INotebookSessionDidChangeEvent {
 	/** The URI of the notebook corresponding to the session. */
@@ -52,15 +52,15 @@ export class NotebookSessionService implements vscode.Disposable {
 	private readonly _notebookSessionsByNotebookUri = new ResourceMap<positron.LanguageRuntimeSession>();
 
 	/** The event emitter for the onDidChangeNotebookSession event. */
-	private readonly _onDidChangeNotebookSession = this._register(new vscode.EventEmitter<INotebookSessionDidChangeEvent>);
+	// private readonly _onDidChangeNotebookSession = this._register(new vscode.EventEmitter<INotebookSessionDidChangeEvent>);
 
 	/** An event that fires when a session is set/unset for a notebook. */
-	readonly onDidChangeNotebookSession = this._onDidChangeNotebookSession.event;
+	// readonly onDidChangeNotebookSession = this._onDidChangeNotebookSession.event;
 
-	private _register<T extends vscode.Disposable>(disposable: T): T {
-		this._disposables.push(disposable);
-		return disposable;
-	}
+	// private _register<T extends vscode.Disposable>(disposable: T): T {
+	// 	this._disposables.push(disposable);
+	// 	return disposable;
+	// }
 
 	/**
 	 * Checks for a starting or running notebook for the given notebook URI.
@@ -80,12 +80,12 @@ export class NotebookSessionService implements vscode.Disposable {
 	 * @param notebookUri The notebook URI to check for.
 	 * @returns True if a running notebook session exists for the given notebook URI.
 	 */
-	hasRunningNotebookSession(notebookUri: vscode.Uri | undefined): boolean {
-		if (!notebookUri) {
-			return false;
-		}
-		return this._notebookSessionsByNotebookUri.has(notebookUri);
-	}
+	// hasRunningNotebookSession(notebookUri: vscode.Uri | undefined): boolean {
+	// 	if (!notebookUri) {
+	// 		return false;
+	// 	}
+	// 	return this._notebookSessionsByNotebookUri.has(notebookUri);
+	// }
 
 	/**
 	 * Get the running notebook session for the given notebook URI, if one exists.
@@ -93,9 +93,9 @@ export class NotebookSessionService implements vscode.Disposable {
 	 * @param notebookUri The notebook URI of the session to retrieve.
 	 * @returns The running notebook session for the given notebook URI, if one exists.
 	 */
-	getNotebookSession(notebookUri: vscode.Uri): positron.LanguageRuntimeSession | undefined {
-		return this._notebookSessionsByNotebookUri.get(notebookUri);
-	}
+	// getNotebookSession(notebookUri: vscode.Uri): positron.LanguageRuntimeSession | undefined {
+	// 	return this._notebookSessionsByNotebookUri.get(notebookUri);
+	// }
 
 	/**
 	 * Set a notebook session for a notebook URI.
@@ -103,13 +103,13 @@ export class NotebookSessionService implements vscode.Disposable {
 	 * @param notebookUri The notebook URI of the session to set.
 	 * @param session The session to set for the notebook URI, or undefined to delete the session.
 	 */
-	setNotebookSession(notebookUri: vscode.Uri, session: positron.LanguageRuntimeSession | undefined): void {
+	private setNotebookSession(notebookUri: vscode.Uri, session: positron.LanguageRuntimeSession | undefined): void {
 		if (session) {
 			this._notebookSessionsByNotebookUri.set(notebookUri, session);
 		} else {
 			this._notebookSessionsByNotebookUri.delete(notebookUri);
 		}
-		this._onDidChangeNotebookSession.fire({ notebookUri, session });
+		// this._onDidChangeNotebookSession.fire({ notebookUri, session });
 	}
 
 	/**
@@ -119,94 +119,94 @@ export class NotebookSessionService implements vscode.Disposable {
 	 * @param runtimeId The language runtime ID to start.
 	 * @returns Promise that resolves when the runtime startup sequence has been started.
 	 */
-	async startRuntimeSession(notebookUri: vscode.Uri, runtimeId: string): Promise<positron.LanguageRuntimeSession> {
-		// Return the existing promise, if there is one.
-		const startingSessionPromise = this._startingSessionsByNotebookUri.get(notebookUri) ||
-			this._restartingSessionsByNotebookUri.get(notebookUri);
-		if (startingSessionPromise) {
-			return startingSessionPromise;
-		}
+	// async startRuntimeSession(notebookUri: vscode.Uri, runtimeId: string): Promise<positron.LanguageRuntimeSession> {
+	// 	// Return the existing promise, if there is one.
+	// 	const startingSessionPromise = this._startingSessionsByNotebookUri.get(notebookUri) ||
+	// 		this._restartingSessionsByNotebookUri.get(notebookUri);
+	// 	if (startingSessionPromise) {
+	// 		return startingSessionPromise;
+	// 	}
 
-		// Construct a wrapping promise that resolves/rejects after the session maps have been updated.
-		const startPromise = (async () => {
-			try {
-				const session = await this.doStartRuntimeSession(notebookUri, runtimeId);
-				this._startingSessionsByNotebookUri.delete(notebookUri);
-				this.setNotebookSession(notebookUri, session);
-				log.info(`Session ${session.metadata.sessionId} is started`);
-				return session;
-			} catch (err) {
-				this._startingSessionsByNotebookUri.delete(notebookUri);
-				throw err;
-			}
-		})();
+	// 	// Construct a wrapping promise that resolves/rejects after the session maps have been updated.
+	// 	const startPromise = (async () => {
+	// 		try {
+	// 			const session = await this.doStartRuntimeSession(notebookUri, runtimeId);
+	// 			this._startingSessionsByNotebookUri.delete(notebookUri);
+	// 			this.setNotebookSession(notebookUri, session);
+	// 			log.info(`Session ${session.metadata.sessionId} is started`);
+	// 			return session;
+	// 		} catch (err) {
+	// 			this._startingSessionsByNotebookUri.delete(notebookUri);
+	// 			throw err;
+	// 		}
+	// 	})();
 
-		this._startingSessionsByNotebookUri.set(notebookUri, startPromise);
+	// 	this._startingSessionsByNotebookUri.set(notebookUri, startPromise);
 
-		return startPromise;
-	}
+	// 	return startPromise;
+	// }
 
-	async doStartRuntimeSession(notebookUri: vscode.Uri, runtimeId: string, retry = true): Promise<positron.LanguageRuntimeSession> {
-		// If the session is still shutting down, wait for it to finish.
-		const shuttingDownSessionPromise = this._shuttingDownSessionsByNotebookUri.get(notebookUri);
-		if (shuttingDownSessionPromise) {
-			try {
-				await shuttingDownSessionPromise;
-			} catch (err) {
-				log.error(`Waiting for notebook runtime to shutdown before starting failed. Reason ${err}`);
-				throw err;
-			}
-		}
+	// async doStartRuntimeSession(notebookUri: vscode.Uri, runtimeId: string, retry = true): Promise<positron.LanguageRuntimeSession> {
+	// 	// If the session is still shutting down, wait for it to finish.
+	// 	const shuttingDownSessionPromise = this._shuttingDownSessionsByNotebookUri.get(notebookUri);
+	// 	if (shuttingDownSessionPromise) {
+	// 		try {
+	// 			await shuttingDownSessionPromise;
+	// 		} catch (err) {
+	// 			log.error(`Waiting for notebook runtime to shutdown before starting failed. Reason ${err}`);
+	// 			throw err;
+	// 		}
+	// 	}
 
-		// Ensure that we don't start a runtime for a notebook that already has one.
-		if (this._notebookSessionsByNotebookUri.has(notebookUri)) {
-			if (!retry) {
-				throw new Error(`Tried to start a runtime for a notebook that already has one: ${notebookUri.path}`);
-			}
-			// Notebook controllers may try to start a runtime immediately before shutting down the
-			// previous, due to out of order onDidChangeSelectedNotebooks events. Wait and retry once.
-			log.debug('Tried to start a runtime for a notebook that already has one. Waiting and retrying once...');
-			await delay(50);
-			return this.doStartRuntimeSession(notebookUri, runtimeId, false);
-		}
+	// 	// Ensure that we don't start a runtime for a notebook that already has one.
+	// 	if (this._notebookSessionsByNotebookUri.has(notebookUri)) {
+	// 		if (!retry) {
+	// 			throw new Error(`Tried to start a runtime for a notebook that already has one: ${notebookUri.path}`);
+	// 		}
+	// 		// Notebook controllers may try to start a runtime immediately before shutting down the
+	// 		// previous, due to out of order onDidChangeSelectedNotebooks events. Wait and retry once.
+	// 		log.debug('Tried to start a runtime for a notebook that already has one. Waiting and retrying once...');
+	// 		await delay(50);
+	// 		return this.doStartRuntimeSession(notebookUri, runtimeId, false);
+	// 	}
 
-		// If there's already a session for this runtime e.g. one restored after a window reload, use it.
-		try {
-			const session = await positron.runtime.getNotebookSession(notebookUri);
-			if (session) {
-				// TODO: If it isn't running, log an error and start a new one.
-				// TODO: If it doesn't match the runtime ID, log an error, shut it down, and start a new one.
-				log.info(
-					`Restored session for language runtime ${session.metadata.sessionId} `
-					+ `(language: ${session.runtimeMetadata.languageName}, name: ${session.runtimeMetadata.runtimeName}, `
-					+ `version: ${session.runtimeMetadata.runtimeVersion}, notebook: ${notebookUri.path})`
-				);
-				return session;
-			}
-		} catch (err) {
-			log.error(
-				`Getting existing session for notebook ${notebookUri.path}' failed. Reason: ${err}`
-			);
-			throw err;
-		}
+	// 	// If there's already a session for this runtime e.g. one restored after a window reload, use it.
+	// 	try {
+	// 		const session = await positron.runtime.getNotebookSession(notebookUri);
+	// 		if (session) {
+	// 			// TODO: If it isn't running, log an error and start a new one.
+	// 			// TODO: If it doesn't match the runtime ID, log an error, shut it down, and start a new one.
+	// 			log.info(
+	// 				`Restored session for language runtime ${session.metadata.sessionId} `
+	// 				+ `(language: ${session.runtimeMetadata.languageName}, name: ${session.runtimeMetadata.runtimeName}, `
+	// 				+ `version: ${session.runtimeMetadata.runtimeVersion}, notebook: ${notebookUri.path})`
+	// 			);
+	// 			return session;
+	// 		}
+	// 	} catch (err) {
+	// 		log.error(
+	// 			`Getting existing session for notebook ${notebookUri.path}' failed. Reason: ${err}`
+	// 		);
+	// 		throw err;
+	// 	}
 
-		// If we couldn't restore a session, start a new one.
-		try {
-			const session = await positron.runtime.startLanguageRuntime(
-				runtimeId,
-				path.basename(notebookUri.path), // Use the notebook's file name as the session name.
-				notebookUri);
-			log.info(
-				`Starting session for language runtime ${session.metadata.sessionId} `
-				+ `(language: ${session.runtimeMetadata.languageName}, name: ${session.runtimeMetadata.runtimeName}, `
-				+ `version: ${session.runtimeMetadata.runtimeVersion}, notebook: ${notebookUri.path})`
-			);
-			return session;
-		} catch (err) {
-			log.error(`Starting session for language runtime ${runtimeId} failed. Reason: ${err}`);
-			throw err;
-		}
-	}
+	// 	// If we couldn't restore a session, start a new one.
+	// 	try {
+	// 		const session = await positron.runtime.startLanguageRuntime(
+	// 			runtimeId,
+	// 			path.basename(notebookUri.path), // Use the notebook's file name as the session name.
+	// 			notebookUri);
+	// 		log.info(
+	// 			`Starting session for language runtime ${session.metadata.sessionId} `
+	// 			+ `(language: ${session.runtimeMetadata.languageName}, name: ${session.runtimeMetadata.runtimeName}, `
+	// 			+ `version: ${session.runtimeMetadata.runtimeVersion}, notebook: ${notebookUri.path})`
+	// 		);
+	// 		return session;
+	// 	} catch (err) {
+	// 		log.error(`Starting session for language runtime ${runtimeId} failed. Reason: ${err}`);
+	// 		throw err;
+	// 	}
+	// }
 
 	/**
 	 * Shutdown the runtime session for a notebook.
