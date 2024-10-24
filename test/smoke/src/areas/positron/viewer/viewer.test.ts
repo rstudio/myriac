@@ -37,7 +37,11 @@ VetiverAPI(v).run()`;
 
 			await theDoc.waitFor({ state: 'attached', timeout: 60000 });
 
-			await app.workbench.positronConsole.activeConsole.click();
+			// This is bad because it can end up clicking a link inside the console:
+			//await app.workbench.positronConsole.activeConsole.click();
+
+			await app.workbench.positronConsole.clickConsoleTab();
+
 			await app.workbench.positronConsole.sendKeyboardKey('Control+C');
 
 			await app.workbench.positronConsole.waitForConsoleContents(buffer => buffer.some(line => line.includes('Application shutdown complete.')));

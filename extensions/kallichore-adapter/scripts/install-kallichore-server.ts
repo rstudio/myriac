@@ -47,8 +47,7 @@ async function getVersionFromPackageJson(): Promise<string | null> {
 		const packageJson = JSON.parse(await readFileAsync('package.json', 'utf-8'));
 		return packageJson.positron.binaryDependencies?.kallichore || null;
 	} catch (error) {
-		console.error('Error reading package.json: ', error);
-		return null;
+		throw new Error(`Error reading package.json: ${error}`);
 	}
 }
 
@@ -67,8 +66,7 @@ async function getLocalKallichoreVersion(): Promise<string | null> {
 		}
 		return readFileAsync(versionFile, 'utf-8');
 	} catch (error) {
-		console.error('Error determining Kallichore version: ', error);
-		return null;
+		throw new Error(`Error determining Kallichore version: ${error}`);
 	}
 }
 
@@ -123,7 +121,7 @@ async function downloadAndReplaceKallichore(version: string,
 			method: 'GET',
 			protocol: 'https:',
 			hostname: 'api.github.com',
-			path: `/repos/posit-dev/kallichore/releases`
+			path: `/repos/posit-dev/kallichore-builds/releases`
 		};
 
 		const response = await httpsGetAsync(requestOptions as any) as any;
@@ -138,7 +136,7 @@ async function downloadAndReplaceKallichore(version: string,
 				await executeCommand('git credential approve',
 					`protocol=https\n` +
 					`host=github.com\n` +
-					`path=/repos/posit-dev/kallichore/releases\n` +
+					`path=/repos/posit-dev/kallichore-builds/releases\n` +
 					`username=\n` +
 					`password=${githubPat}\n`);
 			console.log(stdout);
@@ -155,7 +153,7 @@ async function downloadAndReplaceKallichore(version: string,
 				await executeCommand('git credential reject',
 					`protocol=https\n` +
 					`host=github.com\n` +
-					`path=/repos/posit-dev/kallichore/releases\n` +
+					`path=/repos/posit-dev/kallichore-builds/releases\n` +
 					`username=\n` +
 					`password=${githubPat}\n`);
 			console.log(stdout);
@@ -191,8 +189,7 @@ async function downloadAndReplaceKallichore(version: string,
 			}
 			const release = releases.find((asset: any) => asset.tag_name === version);
 			if (!release) {
-				console.error(`Could not find Kallichore ${version} in the releases.`);
-				return;
+				throw new Error(`Could not find Kallichore ${version} in the releases.`);
 			}
 
 			let os: string;
@@ -201,16 +198,14 @@ async function downloadAndReplaceKallichore(version: string,
 				case 'darwin': os = 'darwin-universal'; break;
 				case 'linux': os = (arch() === 'arm64' ? 'linux-arm64' : 'linux-x64'); break;
 				default: {
-					console.error(`Unsupported platform ${platform()}.`);
-					return;
+					throw new Error(`Unsupported platform ${platform()}.`);
 				}
 			}
 
 			const assetName = `kallichore-${version}-${os}.zip`;
 			const asset = release.assets.find((asset: any) => asset.name === assetName);
 			if (!asset) {
-				console.error(`Could not find Kallichore with asset name ${assetName} in the release.`);
-				return;
+				throw new Error(`Could not find Kallichore with asset name ${assetName} in the release.`);
 			}
 			console.log(`Downloading Kallichore ${version} from ${asset.url}...`);
 			const url = new URL(asset.url);
@@ -259,7 +254,7 @@ async function downloadAndReplaceKallichore(version: string,
 			});
 		});
 	} catch (error) {
-		console.error('Error downloading Kallichore:', error);
+		throw new Error(`Error downloading Kallichore: ${error}`);
 	}
 }
 
@@ -296,8 +291,7 @@ async function main() {
 	const localKallichoreVersion = await getLocalKallichoreVersion();
 
 	if (!packageJsonVersion) {
-		console.error('Could not determine Kallichore version from package.json.');
-		return;
+		throw new Error('Could not determine Kallichore version from package.json.');
 	}
 
 	console.log(`package.json version: ${packageJsonVersion} `);
@@ -366,7 +360,7 @@ async function main() {
 			await executeCommand('git credential fill',
 				`protocol=https\n` +
 				`host=github.com\n` +
-				`path=/repos/posit-dev/kallichore/releases\n`);
+				`path=/repos/posit-dev/kallichore-builds/releases\n`);
 
 		gitCredential = true;
 		// Extract the `password = ` line from the output.
@@ -388,14 +382,6 @@ async function main() {
 	await downloadAndReplaceKallichore(packageJsonVersion, githubPat, gitCredential);
 }
 
-// Disable downloading if running inside a Github action on the public
-// posit-dev/positron repository, which doesn't currently have access to the
-// private Kallichore repository.
-if (process.env.GITHUB_ACTIONS && process.env.GITHUB_REPOSITORY === 'posit-dev/positron') {
-	console.log('Skipping Kallichore download on public repository.');
-} else {
-
-	main().catch((error) => {
-		console.error('An error occurred:', error);
-	});
-}
+main().catch((error) => {
+	console.error('An error occurred:', error);
+});
