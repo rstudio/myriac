@@ -417,16 +417,19 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			throw new Error(`No language runtime with id '${runtimeId}' was found.`);
 		}
 
-		// If there is already a runtime starting for the language, throw an error.
 		if (sessionMode === LanguageRuntimeSessionMode.Console) {
-			// TODO: Is this possible given the check at the start of this function?
+			// If there is already a runtime starting for the language, throw an error.
 			const startingLanguageRuntime = this._startingConsolesByLanguageId.get(
 				languageRuntime.languageId);
 			if (startingLanguageRuntime) {
-				throw new Error(`Session for language runtime ${formatLanguageRuntimeMetadata(languageRuntime)} cannot be started because language runtime ${formatLanguageRuntimeMetadata(startingLanguageRuntime)} is already starting for the language. Request source: ${source}`);
+				throw new Error(`Session for language runtime ` +
+					`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+					`cannot be started because language runtime ` +
+					`${formatLanguageRuntimeMetadata(startingLanguageRuntime)} ` +
+					`is already starting for the language. ` +
+					`Request source: ${source}`);
 			}
 
-			// TODO: This comment is misleading
 			// If there is already a runtime running for the language, throw an error.
 			const runningLanguageRuntime =
 				this._consoleSessionsByLanguageId.get(languageRuntime.languageId);
@@ -449,6 +452,19 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			if (!notebookUri) {
 				throw new Error('A notebook URI must be provided when starting a notebook session.');
 			}
+
+			// If there is already a runtime starting for the language, throw an error.
+			const startingLanguageRuntime = this._startingNotebooksByNotebookUri.get(notebookUri);
+			if (startingLanguageRuntime) {
+				throw new Error(`Session for language runtime ` +
+					`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+					`cannot be started because language runtime ` +
+					`${formatLanguageRuntimeMetadata(startingLanguageRuntime)} ` +
+					`is already starting for the notebook ${notebookUri.toString()}. ` +
+					`Request source: ${source}`);
+			}
+
+			// If there is already a runtime running for the notebook, throw an error.
 			const runningLanguageRuntime = this._notebookSessionsByNotebookUri.get(notebookUri);
 			if (runningLanguageRuntime) {
 				const metadata = runningLanguageRuntime.runtimeMetadata;
@@ -462,7 +478,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 						`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
 						`cannot be started because a session for ` +
 						`${formatLanguageRuntimeMetadata(metadata)} is already running ` +
-						`for the notebook '${notebookUri.fsPath}'.`);
+						`for the notebook ${notebookUri.toString()}.`);
 				}
 			}
 		}
@@ -503,6 +519,11 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		// Add the runtime to the starting runtimes, if it's a console session.
 		if (sessionMetadata.sessionMode === LanguageRuntimeSessionMode.Console) {
 			this._startingConsolesByLanguageId.set(runtimeMetadata.languageId, runtimeMetadata);
+		} else if (sessionMetadata.sessionMode === LanguageRuntimeSessionMode.Notebook) {
+			if (!sessionMetadata.notebookUri) {
+				throw new Error('A notebook URI must be provided when restoring a notebook session.');
+			}
+			this._startingNotebooksByNotebookUri.set(sessionMetadata.notebookUri, runtimeMetadata);
 		}
 
 		// Create a promise that resolves when the runtime is ready to use.
@@ -531,6 +552,9 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			startPromise.error(err);
 			this._startingSessionsBySessionMapKey.delete(sessionMapKey);
 			this._startingConsolesByLanguageId.delete(runtimeMetadata.languageId);
+			if (sessionMetadata.notebookUri) {
+				this._startingNotebooksByNotebookUri.delete(sessionMetadata.notebookUri);
+			}
 			throw err;
 		}
 
@@ -807,6 +831,13 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		// Add the runtime to the starting runtimes.
 		if (sessionMode === LanguageRuntimeSessionMode.Console) {
 			this._startingConsolesByLanguageId.set(runtimeMetadata.languageId, runtimeMetadata);
+		} else if (sessionMode === LanguageRuntimeSessionMode.Notebook) {
+			if (notebookUri) {
+				this._startingNotebooksByNotebookUri.set(notebookUri, runtimeMetadata);
+			} else {
+				this._logService.error(`Notebook session ${formatLanguageRuntimeMetadata(runtimeMetadata)} ` +
+					`does not have a notebook URI.`);
+			}
 		}
 
 		// Create a promise that resolves when the runtime is ready to use.
@@ -836,6 +867,9 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			startPromise.error(err);
 			this._startingSessionsBySessionMapKey.delete(sessionMapKey);
 			this._startingConsolesByLanguageId.delete(runtimeMetadata.languageId);
+			if (notebookUri) {
+				this._startingNotebooksByNotebookUri.delete(notebookUri);
+			}
 
 			// Re-throw the error.
 			throw err;
@@ -908,6 +942,9 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 
 			// Remove the runtime from the starting runtimes.
 			this._startingConsolesByLanguageId.delete(session.runtimeMetadata.languageId);
+			if (session.metadata.notebookUri) {
+				this._startingNotebooksByNotebookUri.delete(session.metadata.notebookUri);
+			}
 			this._startingSessionsBySessionMapKey.delete(sessionMapKey);
 
 			// Fire the onDidFailStartRuntime event.
