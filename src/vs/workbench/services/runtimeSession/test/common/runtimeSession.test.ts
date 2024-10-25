@@ -152,7 +152,7 @@ suite('Positron - RuntimeSessionService', () => {
 		assert.ifError(error);
 	}
 
-	suite('Start', () => {
+	suite('startNewRuntimeSession', () => {
 		test('start console details', async () => {
 			await testStartSessionDetails();
 		});
@@ -235,7 +235,25 @@ suite('Positron - RuntimeSessionService', () => {
 		test('start console for a runtime that is already running', async () => {
 			const session1 = await startSession();
 			const session2 = await startSession();
+
+			// Check that the same session was returned.
 			assert.equal(session1, session2);
+
+			// Check that only one session was started.
+			assertServiceState({ hasStartingOrRunningConsole: true, consoleSession: session1 });
+		});
+
+		test('start console while the same runtime is starting', async () => {
+			const [session1, session2] = await Promise.all([
+				startSession(),
+				startSession(),
+			]);
+
+			// Check that the same session was returned.
+			assert.equal(session1, session2);
+
+			// Check that only one session was started.
+			assertServiceState({ hasStartingOrRunningConsole: true, consoleSession: session1 });
 		});
 
 		// TODO: Maybe this should be moved to a queuing suite.
