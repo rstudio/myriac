@@ -8,7 +8,7 @@ import * as sinon from 'sinon';
 import { URI } from 'vs/base/common/uri';
 import { ensureNoDisposablesAreLeakedInTestSuite } from 'vs/base/test/common/utils';
 import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
-import { formatLanguageRuntimeMetadata, ILanguageRuntimeMetadata, LanguageRuntimeSessionMode, RuntimeState } from 'vs/workbench/services/languageRuntime/common/languageRuntimeService';
+import { formatLanguageRuntimeMetadata, ILanguageRuntimeMetadata, LanguageRuntimeSessionMode, RuntimeExitReason, RuntimeState } from 'vs/workbench/services/languageRuntime/common/languageRuntimeService';
 import { ILanguageRuntimeSession, IRuntimeSessionService, IRuntimeSessionWillStartEvent } from 'vs/workbench/services/runtimeSession/common/runtimeSessionService';
 import { TestLanguageRuntimeSession } from 'vs/workbench/services/runtimeSession/test/common/testLanguageRuntimeSession';
 import { createRuntimeServices, createTestLanguageRuntimeMetadata, startTestLanguageRuntimeSession } from 'vs/workbench/services/runtimeSession/test/common/testRuntimeSessionService';
@@ -230,80 +230,6 @@ suite('Positron - RuntimeSessionService', () => {
 				new Error(`No language runtime with id '${runtimeId}' was found.`),
 			);
 		});
-
-		// TODO: Maybe this should be moved to a queuing suite.
-		test('start console for a runtime that is already running', async () => {
-			const session1 = await startSession();
-			const session2 = await startSession();
-
-			// Check that the same session was returned.
-			assert.equal(session1, session2);
-
-			// Check that only one session was started.
-			assertServiceState({ hasStartingOrRunningConsole: true, consoleSession: session1 });
-		});
-
-		test('start console while the same runtime is starting', async () => {
-			const [session1, session2] = await Promise.all([
-				startSession(),
-				startSession(),
-			]);
-
-			// Check that the same session was returned.
-			assert.equal(session1, session2);
-
-			// Check that only one session was started.
-			assertServiceState({ hasStartingOrRunningConsole: true, consoleSession: session1 });
-		});
-
-		// TODO: Maybe this should be moved to a queuing suite.
-		test('start console while another runtime is starting for the language', async () => {
-			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
-			startSession();
-
-			await assert.rejects(
-				startSession(undefined, anotherRuntime),
-				new Error(`Session for language runtime ${formatLanguageRuntimeMetadata(anotherRuntime)} ` +
-					`cannot be started because language runtime ${formatLanguageRuntimeMetadata(runtime)} ` +
-					`is already starting for the language. Request source: ${startReason}`),
-			);
-		});
-
-		// TODO: Maybe this should be moved to a queuing suite.
-		test('start console while another runtime is running for the language', async () => {
-			await startSession();
-
-			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
-			await assert.rejects(
-				startSession(undefined, anotherRuntime),
-				new Error(`A console for ${formatLanguageRuntimeMetadata(anotherRuntime)} cannot ` +
-					`be started because a console for ${formatLanguageRuntimeMetadata(runtime)} ` +
-					`is already running for the ${runtime.languageName} language.`),
-			);
-		});
-
-		// TODO: Maybe this should be moved to a queuing suite.
-		test('start notebook while another runtime is starting for the notebook', async () => {
-			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
-			startSession(notebookUri);
-
-			await assert.rejects(startSession(notebookUri, anotherRuntime),
-				new Error(`Session for language runtime ${formatLanguageRuntimeMetadata(anotherRuntime)} ` +
-					`cannot be started because language runtime ${formatLanguageRuntimeMetadata(runtime)} ` +
-					`is already starting for the notebook ${notebookUri.toString()}. Request source: ${startReason}`));
-		});
-
-		// TODO: Maybe this should be moved to a queuing suite.
-		test('start notebook while another runtime is running for the notebook', async () => {
-			await startSession(notebookUri);
-
-			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
-			await assert.rejects(startSession(notebookUri, anotherRuntime),
-				new Error(`A session for ${formatLanguageRuntimeMetadata(anotherRuntime)} cannot ` +
-					`be started because a session for ${formatLanguageRuntimeMetadata(runtime)} ` +
-					`is already running for the notebook ${notebookUri.toString()}.`));
-		});
-
 		// TODO: Not sure why the after hook is failing here.
 		test.skip('start session encounters session.start() error', async () => {
 			// Stub the session start method to throw an error.
@@ -337,46 +263,138 @@ suite('Positron - RuntimeSessionService', () => {
 		});
 	});
 
-	suite('Queuing', () => {
-		// TODO: We can't actually test this yet because we don't have a shutdown method.
-		// test('should process operations in order', async () => {
-		// 	const sessionPromise = startSession();
-		// 	const shutdownPromise = startSession();
-		// 	const restartPromise = runtimeSessionService.restartSession(sessionPromise.id);
+	suite('shutdownNotebookSession', () => {
+		test('shutdown notebook', async () => {
+			const session = await startSession(notebookUri);
 
-		// 	await shutdownPromise;
-		// 	assert.strictEqual(sessionPromise.status, 'exited');
+			await runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown);
 
-		// 	await restartPromise;
-		// 	assert.strictEqual(sessionPromise.status, 'active');
-		// });
+			assert.equal(session.getRuntimeState(), RuntimeState.Exiting);
+			assertServiceState({ notebookSession: session });
+		});
 
-		test('should return the same promise for duplicate start requests', async () => {
-			// const startPromise1 = manager.startSession('console', { runtimeId: '123' });
-			// const startPromise2 = manager.startSession('console', { runtimeId: '123' });
-
-			// assert.strictEqual(startPromise1, startPromise2);
-
-			// const session = await startPromise1;
-			// assert.strictEqual(session.status, 'active');
+		test('shutdown notebook without running runtime', async () => {
+			// It should not error, since it's already in the desired state.
+			await runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown);
+			assertServiceState();
 		});
 	});
 
-	// test.skip('start a new console session while starting', async () => {
-	// 	const [session1, session2] = await Promise.all([
-	// 		startConsoleSession(),
-	// 		startConsoleSession(),
-	// 	]);
+	suite('queuing', () => {
+		test('start console for a runtime that is already running', async () => {
+			const session1 = await startSession();
+			const session2 = await startSession();
 
-	// 	// Check that the same session is resolved.
-	// 	assert.equal(session1, session2);
+			// Check that the same session was returned.
+			assert.equal(session1, session2);
 
-	// 	// Check the session state.
-	// 	assert.equal(session1.getRuntimeState(), RuntimeState.Ready);
+			// Check that only one session was started.
+			assertServiceState({ hasStartingOrRunningConsole: true, consoleSession: session1 });
+		});
 
-	// 	// Check that only one session was started.
-	// 	assert.deepEqual(runtimeSessionService.activeSessions, [session1]);
-	// });
+		test('start console while another runtime is starting for the language', async () => {
+			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
+			startSession();
+
+			await assert.rejects(
+				startSession(undefined, anotherRuntime),
+				new Error(`Session for language runtime ${formatLanguageRuntimeMetadata(anotherRuntime)} ` +
+					`cannot be started because language runtime ${formatLanguageRuntimeMetadata(runtime)} ` +
+					`is already starting for the language. Request source: ${startReason}`),
+			);
+		});
+
+		test('start console while another runtime is running for the language', async () => {
+			await startSession();
+
+			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
+			await assert.rejects(
+				startSession(undefined, anotherRuntime),
+				new Error(`A console for ${formatLanguageRuntimeMetadata(anotherRuntime)} cannot ` +
+					`be started because a console for ${formatLanguageRuntimeMetadata(runtime)} ` +
+					`is already running for the ${runtime.languageName} language.`),
+			);
+		});
+
+		test('start notebook while another runtime is starting for the notebook', async () => {
+			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
+			startSession(notebookUri);
+
+			await assert.rejects(startSession(notebookUri, anotherRuntime),
+				new Error(`Session for language runtime ${formatLanguageRuntimeMetadata(anotherRuntime)} ` +
+					`cannot be started because language runtime ${formatLanguageRuntimeMetadata(runtime)} ` +
+					`is already starting for the notebook ${notebookUri.toString()}. Request source: ${startReason}`));
+		});
+
+		test('start notebook while another runtime is running for the notebook', async () => {
+			await startSession(notebookUri);
+
+			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
+			await assert.rejects(startSession(notebookUri, anotherRuntime),
+				new Error(`A session for ${formatLanguageRuntimeMetadata(anotherRuntime)} cannot ` +
+					`be started because a session for ${formatLanguageRuntimeMetadata(runtime)} ` +
+					`is already running for the notebook ${notebookUri.toString()}.`));
+		});
+
+		test('shutdown notebook while starting', async () => {
+			const [session,] = await Promise.all([
+				startSession(notebookUri),
+				runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown),
+			]);
+
+			assert.equal(session.getRuntimeState(), RuntimeState.Exiting);
+			assertServiceState({ notebookSession: session });
+		});
+
+		test('start notebook while shutting down', async () => {
+			const session1 = await startSession(notebookUri);
+
+			// No error should be thrown.
+			const [, session2, session3] = await Promise.all([
+				runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown),
+				startSession(notebookUri),
+				startSession(notebookUri),
+			]);
+
+			// Both start requests should return the same session.
+			assert.equal(session2.sessionId, session3.sessionId);
+
+			// The first session should have exited.
+			assert.equal(session1.getRuntimeState(), RuntimeState.Exited);
+
+			// A new session should be starting.
+			assert.equal(session2.getRuntimeState(), RuntimeState.Starting);
+
+			// Check the service state.
+			assert.deepEqual(runtimeSessionService.getNotebookSessionForNotebookUri(notebookUri), session2);
+			assert.deepEqual(runtimeSessionService.activeSessions, [session1, session2]);
+		});
+
+		test('coalesce concurrent start requests', async () => {
+			const [session1, session2] = await Promise.all([
+				startSession(),
+				startSession(),
+			]);
+
+			// Check that the same session was returned.
+			assert.equal(session1, session2);
+
+			// Check that only one session was started.
+			assertServiceState({ hasStartingOrRunningConsole: true, consoleSession: session1 });
+		});
+
+		test('coalesce concurrent shutdown notebook requests', async () => {
+			const session = await startSession(notebookUri);
+
+			// No error should be thrown.
+			await Promise.all([
+				runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown),
+				runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown),
+			]);
+
+			assert.equal(session.getRuntimeState(), RuntimeState.Exiting);
+		});
+	});
 
 	// test.skip('restart a console session with "ready" state', async () => {
 	// 	// Start a new session.
