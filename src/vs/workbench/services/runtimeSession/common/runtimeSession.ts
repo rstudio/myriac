@@ -908,21 +908,15 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		// Attach event handlers to the newly provisioned session.
 		this.attachToSession(session, manager);
 
-		const sessionMapKey = getSessionMapKey(
-			session.metadata.sessionMode, session.runtimeMetadata.runtimeId, session.metadata.notebookUri);
 		try {
 			// Attempt to start, or reconnect to, the session.
 			await session.start();
 
-			// The runtime started. Move it from the starting runtimes to the
-			// running runtimes.
-			this._startingSessionsBySessionMapKey.delete(sessionMapKey);
+			// The runtime started. Add it to the running runtimes.
 			if (session.metadata.sessionMode === LanguageRuntimeSessionMode.Console) {
-				this._startingConsolesByLanguageId.delete(session.runtimeMetadata.languageId);
 				this._consoleSessionsByLanguageId.set(session.runtimeMetadata.languageId, session);
 			} else if (session.metadata.sessionMode === LanguageRuntimeSessionMode.Notebook) {
 				if (session.metadata.notebookUri) {
-					this._startingNotebooksByNotebookUri.delete(session.metadata.notebookUri);
 					this._logService.info(`Notebook session for ${session.metadata.notebookUri} started: ${session.metadata.sessionId}`);
 					this._notebookSessionsByNotebookUri.set(session.metadata.notebookUri, session);
 				} else {
@@ -939,14 +933,6 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 				this._foregroundSession = session;
 			}
 		} catch (reason) {
-
-			// Remove the runtime from the starting runtimes.
-			this._startingConsolesByLanguageId.delete(session.runtimeMetadata.languageId);
-			if (session.metadata.notebookUri) {
-				this._startingNotebooksByNotebookUri.delete(session.metadata.notebookUri);
-			}
-			this._startingSessionsBySessionMapKey.delete(sessionMapKey);
-
 			// Fire the onDidFailStartRuntime event.
 			this._onDidFailStartRuntimeEmitter.fire(session);
 
@@ -954,6 +940,15 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 
 			// Rethrow the error.
 			throw reason;
+		} finally {
+			// Remove the runtime from the starting runtimes.
+			this._startingConsolesByLanguageId.delete(session.runtimeMetadata.languageId);
+			if (session.metadata.notebookUri) {
+				this._startingNotebooksByNotebookUri.delete(session.metadata.notebookUri);
+			}
+			const sessionMapKey = getSessionMapKey(
+				session.metadata.sessionMode, session.runtimeMetadata.runtimeId, session.metadata.notebookUri);
+			this._startingSessionsBySessionMapKey.delete(sessionMapKey);
 		}
 	}
 
