@@ -417,6 +417,11 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			throw new Error(`No language runtime with id '${runtimeId}' was found.`);
 		}
 
+		// Create a promise that resolves when the runtime is ready to use.
+		const startPromise = new DeferredPromise<string>();
+		const sessionMapKey = getSessionMapKey(sessionMode, runtimeId, notebookUri);
+		this._startingSessionsBySessionMapKey.set(sessionMapKey, startPromise);
+
 		if (sessionMode === LanguageRuntimeSessionMode.Console) {
 			// If there is already a runtime starting for the language, throw an error.
 			const startingLanguageRuntime = this._startingConsolesByLanguageId.get(
@@ -493,9 +498,9 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		this._logService.info(
 			`Starting session for language runtime ` +
 			`${formatLanguageRuntimeMetadata(languageRuntime)} (Source: ${source})`);
-		return this.doCreateRuntimeSession(languageRuntime, sessionName, sessionMode, source, notebookUri);
+		return this.doCreateRuntimeSession(
+			languageRuntime, sessionName, sessionMode, source, startPromise, notebookUri);
 	}
-
 
 	/**
 	 * Restores (reconnects to) a runtime session that was previously started.
@@ -775,7 +780,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 						const existing =
 							this._languageRuntimeService.getRegisteredRuntime(validated.runtimeId);
 						if (existing) {
-							// This should shouldn't happen, but warn if it does.
+							// This shouldn't happen, but warn if it does.
 							this._logService.warn(
 								`Language runtime ${formatLanguageRuntimeMetadata(validated)} ` +
 								`already registered; re-registering.`);
@@ -807,8 +812,16 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		}
 
 		// Auto-started runtimes are (currently) always console sessions.
-		return this.doCreateRuntimeSession(metadata, metadata.runtimeName,
-			LanguageRuntimeSessionMode.Console, source);
+		const sessionMode = LanguageRuntimeSessionMode.Console;
+		const notebookUri = undefined;
+
+		// Create a promise that resolves when the runtime is ready to use.
+		const startPromise = new DeferredPromise<string>();
+		const sessionMapKey = getSessionMapKey(sessionMode, metadata.runtimeId, notebookUri);
+		this._startingSessionsBySessionMapKey.set(sessionMapKey, startPromise);
+
+		return this.doCreateRuntimeSession(
+			metadata, metadata.runtimeName, sessionMode, source, startPromise);
 	}
 
 	/**
@@ -818,6 +831,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 	 * @param sessionName A human-readable name for the session.
 	 * @param sessionMode The mode for the new session.
 	 * @param source The source of the request to start the runtime.
+	 * @param startPromise A deferred promise that resolves when the runtime is ready to use.
 	 * @param notebookDocument The notebook document to attach to the session, if any.
 	 *
 	 * Returns a promise that resolves with the session ID when the runtime is
@@ -827,6 +841,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		sessionName: string,
 		sessionMode: LanguageRuntimeSessionMode,
 		source: string,
+		startPromise: DeferredPromise<string>,
 		notebookUri?: URI): Promise<string> {
 		// Add the runtime to the starting runtimes.
 		if (sessionMode === LanguageRuntimeSessionMode.Console) {
@@ -839,11 +854,6 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 					`does not have a notebook URI.`);
 			}
 		}
-
-		// Create a promise that resolves when the runtime is ready to use.
-		const startPromise = new DeferredPromise<string>();
-		const sessionMapKey = getSessionMapKey(sessionMode, runtimeMetadata.runtimeId, notebookUri);
-		this._startingSessionsBySessionMapKey.set(sessionMapKey, startPromise);
 
 		const sessionManager = await this.getManagerForRuntime(runtimeMetadata);
 		const sessionId = this.generateNewSessionId(runtimeMetadata);
@@ -865,6 +875,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 				`Creating session for language runtime ` +
 				`${formatLanguageRuntimeMetadata(runtimeMetadata)} failed. Reason: ${err}`);
 			startPromise.error(err);
+			const sessionMapKey = getSessionMapKey(sessionMode, runtimeMetadata.runtimeId, notebookUri);
 			this._startingSessionsBySessionMapKey.delete(sessionMapKey);
 			this._startingConsolesByLanguageId.delete(runtimeMetadata.languageId);
 			if (notebookUri) {
