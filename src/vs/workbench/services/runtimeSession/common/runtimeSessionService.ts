@@ -297,6 +297,8 @@ export interface IRuntimeSessionService {
 	 */
 	getNotebookSessionForNotebookUri(notebookUri: URI): ILanguageRuntimeSession | undefined;
 
+	getSessions(): ILanguageRuntimeSession[];
+
 	/**
 	 * Checks for a starting or running console for the given language ID.
 	 *
@@ -366,6 +368,8 @@ export interface IRuntimeSessionService {
 	 * @param source The source of the request to restart the session, for debugging purposes.
 	 */
 	restartSession(sessionId: string, source: string): Promise<void>;
+
+	shutdownNotebookSession(notebookUri: URI, exitReason: RuntimeExitReason): Promise<void>;
 }
 
 export { RuntimeClientType };

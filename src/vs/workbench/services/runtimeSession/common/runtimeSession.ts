@@ -184,7 +184,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			// runtimes are sorted by priority when registered by the extension
 			// so they will be in the right order so the first one is the right
 			// one to start.
-			this._logService.trace(`Language runtime ${formatLanguageRuntimeMetadata(languageRuntimeInfos[0])} automatically starting`);
+			this._logService.trace(`[Runtime session] Language runtime ${formatLanguageRuntimeMetadata(languageRuntimeInfos[0])} automatically starting`);
 			this.autoStartRuntime(languageRuntimeInfos[0],
 				`A file with the language ID ${languageId} was opened.`);
 		}));
@@ -200,7 +200,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 						this._disconnectedSessions.delete(session.sessionId);
 
 						// Attempt to reconnect the session.
-						this._logService.debug(`Extension ${extensionId.value} has been reloaded; ` +
+						this._logService.debug(`[Runtime session] Extension ${extensionId.value} has been reloaded; ` +
 							`attempting to reconnect session ${session.sessionId}`);
 						this.restoreRuntimeSession(session.runtimeMetadata, session.metadata);
 					}
@@ -213,7 +213,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		// is stored in the old scope.
 		this._register(this._storageService.onDidChangeTarget((e) => {
 			if (e.scope === StorageScope.APPLICATION && this._disconnectedSessions.size > 0) {
-				this._logService.debug(`Application storage scope changed; ` +
+				this._logService.debug(`[Runtime session] Application storage scope changed; ` +
 					`discarding ${this._disconnectedSessions.size} disconnected sessions`);
 				this._disconnectedSessions.clear();
 			}
@@ -300,6 +300,14 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		return this._notebookSessionsByNotebookUri.get(notebookUri);
 	}
 
+	getSessions(): ILanguageRuntimeSession[] {
+		// Return activeSessions without any sessions that are currently shutting down.
+		return Array.from(this._activeSessionsBySessionId.values())
+			.filter(info => !this._shuttingDownRuntimesBySessionId.has(info.session.sessionId) &&
+				!(info.session.metadata.notebookUri && this._shuttingDownNotebooksByNotebookUri.has(info.session.metadata.notebookUri)))
+			.map(info => info.session);
+	}
+
 	/**
 	 * Get a promise that resolves when a session is started.
 	 *
@@ -317,17 +325,18 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 	 *
 	 * Starting sessions are keyed by the composition of the session mode, runtime ID, and notebook URI.
 	 */
-	private setStartingSessionPromise(
+	private createStartingSessionPromise(
 		sessionMode: LanguageRuntimeSessionMode, runtimeId: string, notebookUri: URI | undefined,
-		value: DeferredPromise<string>,
-	): void {
+	): DeferredPromise<string> {
+		const promise = new DeferredPromise<string>();
 		const key = getSessionMapKey(sessionMode, runtimeId, notebookUri);
-		value.p.finally(() => {
-			if (this._startingSessionsBySessionMapKey.get(key) === value) {
+		promise.p.finally(() => {
+			if (this._startingSessionsBySessionMapKey.get(key) === promise) {
 				this._startingSessionsBySessionMapKey.delete(key);
 			}
 		});
-		this._startingSessionsBySessionMapKey.set(key, value);
+		this._startingSessionsBySessionMapKey.set(key, promise);
+		return promise;
 	}
 
 	/**
@@ -367,9 +376,12 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 	}
 
 	async shutdownNotebookSession(notebookUri: URI, exitReason: RuntimeExitReason): Promise<void> {
+		this._logService.debug(`[Runtime session] Shutting down session for notebook ${notebookUri.toString()}`);
+
 		// If there is a pending shutdown request for this notebook, return the existing promise.
 		const shuttingDownPromise = this._shuttingDownNotebooksByNotebookUri.get(notebookUri);
 		if (shuttingDownPromise && !shuttingDownPromise.isSettled) {
+			this._logService.debug(`[Runtime session] Session for notebook ${notebookUri.toString()} is already shutting down. Returning existing promise.`);
 			return shuttingDownPromise.p;
 		}
 
@@ -403,7 +415,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 						// We assume that the error was handled elsewhere and a new session can be
 						// started by the user.
 						this._logService.error(
-							`Aborting shutdown request for notebook '${notebookUri.toString()}'. ` +
+							`[Runtime session] Aborting shutdown request for notebook ${notebookUri.toString()}. ` +
 							`Failed to start session. Reason: ${JSON.stringify(error)}`
 						);
 						shutdownPromise.complete();
@@ -412,7 +424,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 					session = this._activeSessionsBySessionId.get(sessionId)?.session;
 					if (!session) {
 						this._logService.error(
-							`Aborting shutdown request for notebook '${notebookUri.toString()}'. ` +
+							`[Runtime session] Aborting shutdown request for notebook ${notebookUri.toString()}. ` +
 							`Session '${sessionId}' was started, but no active session was found`
 						);
 						shutdownPromise.complete();
@@ -425,7 +437,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		// If we still couldn't find an active session, there's nothing to do.
 		if (!session) {
 			this._logService.debug(
-				`Aborting shutdown request for notebook '${notebookUri.toString()}'. ` +
+				`[Runtime session] Aborting shutdown request for notebook ${notebookUri.toString()}. ` +
 				`No active session found`
 			);
 			shutdownPromise.complete();
@@ -436,9 +448,10 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		try {
 			await this.shutdownRuntimeSession(session, exitReason);
 			shutdownPromise.complete();
+			this._logService.debug(`[Runtime session] Session for notebook ${notebookUri.toString()} has been shut down`);
 		} catch (error) {
 			this._logService.error(
-				`Failed to shutdown session for notebook '${notebookUri.toString()}'. Reason: ${error}`
+				`[Runtime session] Failed to shutdown session for notebook ${notebookUri.toString()}. Reason: ${error}`
 			);
 			shutdownPromise.error(error);
 			throw error;
@@ -512,24 +525,30 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		notebookUri: URI | undefined,
 		source: string): Promise<string> {
 
-		// See if we are already starting the requested session. If we
-		// are, return the promise that resolves when the session is ready to
-		// use. This makes it possible for multiple requests to start the same
-		// session to be coalesced.
-		const startingRuntimePromise = this.getStartingSessionPromise(sessionMode, runtimeId, notebookUri);
-		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
-			return startingRuntimePromise.p;
-		}
-
 		// Get the runtime. Throw an error, if it could not be found.
 		const languageRuntime = this._languageRuntimeService.getRegisteredRuntime(runtimeId);
 		if (!languageRuntime) {
 			throw new Error(`No language runtime with id '${runtimeId}' was found.`);
 		}
 
+		this._logService.debug(`[Runtime session] Starting new ${sessionMode} session ` +
+			`${sessionName} from runtime ${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+			(notebookUri ? `for notebook ${notebookUri.toString()} ` : '') +
+			`(Source: ${source})`);
+
+		// See if we are already starting the requested session. If we
+		// are, return the promise that resolves when the session is ready to
+		// use. This makes it possible for multiple requests to start the same
+		// session to be coalesced.
+		const startingRuntimePromise = this.getStartingSessionPromise(sessionMode, runtimeId, notebookUri);
+		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
+			this._logService.debug(`[Runtime session] Session for runtime ${runtimeId} ` +
+				`is already starting. Returning existing promise.`);
+			return startingRuntimePromise.p;
+		}
+
 		// Create a promise that resolves when the runtime is ready to use.
-		const startPromise = new DeferredPromise<string>();
-		this.setStartingSessionPromise(sessionMode, runtimeId, notebookUri, startPromise);
+		const startPromise = this.createStartingSessionPromise(sessionMode, runtimeId, notebookUri);
 
 		if (sessionMode === LanguageRuntimeSessionMode.Console) {
 			// If there is already a runtime starting for the language, throw an error.
@@ -651,12 +670,10 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		}
 
 		// Create a promise that resolves when the runtime is ready to use.
-		const startPromise = new DeferredPromise<string>();
-		this.setStartingSessionPromise(
+		const startPromise = this.createStartingSessionPromise(
 			sessionMetadata.sessionMode,
 			runtimeMetadata.runtimeId,
-			sessionMetadata.notebookUri,
-			startPromise);
+			sessionMetadata.notebookUri);
 
 		// We should already have a session manager registered, since we can't
 		// get here until the extension host has been activated.
@@ -936,8 +953,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		const notebookUri = undefined;
 
 		// Create a promise that resolves when the runtime is ready to use.
-		const startPromise = new DeferredPromise<string>();
-		this.setStartingSessionPromise(sessionMode, metadata.runtimeId, notebookUri, startPromise);
+		const startPromise = this.createStartingSessionPromise(sessionMode, metadata.runtimeId, notebookUri);
 
 		return this.doCreateRuntimeSession(
 			metadata, metadata.runtimeName, sessionMode, source, startPromise);
@@ -969,7 +985,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			if (notebookUri) {
 				this._startingNotebooksByNotebookUri.set(notebookUri, runtimeMetadata);
 			} else {
-				this._logService.error(`Notebook session ${formatLanguageRuntimeMetadata(runtimeMetadata)} ` +
+				this._logService.error(`[Runtime session] Notebook session ${formatLanguageRuntimeMetadata(runtimeMetadata)} ` +
 					`does not have a notebook URI.`);
 			}
 		}
@@ -991,7 +1007,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			session = await sessionManager.createSession(runtimeMetadata, sessionMetadata);
 		} catch (err) {
 			this._logService.error(
-				`Creating session for language runtime ` +
+				`[Runtime session] Creating session for language runtime ` +
 				`${formatLanguageRuntimeMetadata(runtimeMetadata)} failed. Reason: ${err}`);
 			startPromise.error(err);
 			this._startingConsolesByLanguageId.delete(runtimeMetadata.languageId);
@@ -1048,7 +1064,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 					this._logService.info(`Notebook session for ${session.metadata.notebookUri} started: ${session.metadata.sessionId}`);
 					this._notebookSessionsByNotebookUri.set(session.metadata.notebookUri, session);
 				} else {
-					this._logService.error(`Notebook session ${formatLanguageRuntimeSession(session)} ` +
+					this._logService.error(`[Runtime session] Notebook session ${formatLanguageRuntimeSession(session)} ` +
 						`does not have a notebook URI.`);
 				}
 			}
@@ -1064,7 +1080,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			// Fire the onDidFailStartRuntime event.
 			this._onDidFailStartRuntimeEmitter.fire(session);
 
-			this._logService.error(`Starting language runtime failed. Reason: ${reason}`);
+			this._logService.error(`[Runtime session] Starting language runtime failed. Reason: ${reason}`);
 
 			// Rethrow the error.
 			throw reason;
@@ -1172,7 +1188,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			const sessionInfo = this._activeSessionsBySessionId.get(session.sessionId);
 			if (!sessionInfo) {
 				this._logService.error(
-					`Session ${formatLanguageRuntimeSession(session)} is not active.`);
+					`[Runtime session] Session ${formatLanguageRuntimeSession(session)} is not active.`);
 			} else {
 				const oldState = sessionInfo.state;
 				sessionInfo.state = state;
@@ -1195,7 +1211,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 				const sessionInfo = this._activeSessionsBySessionId.get(session.sessionId);
 				if (!sessionInfo) {
 					this._logService.error(
-						`Session ${formatLanguageRuntimeSession(session)} is not active.`);
+						`[Runtime session] Session ${formatLanguageRuntimeSession(session)} is not active.`);
 					return;
 				}
 
@@ -1227,10 +1243,10 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			}
 		} else if (session.metadata.sessionMode === LanguageRuntimeSessionMode.Notebook) {
 			if (session.metadata.notebookUri) {
-				this._logService.info(`Notebook session for ${session.metadata.notebookUri} exited.`);
+				this._logService.info(`[Runtime session] Notebook session for ${session.metadata.notebookUri} exited.`);
 				this._notebookSessionsByNotebookUri.delete(session.metadata.notebookUri);
 			} else {
-				this._logService.error(`Notebook session ${formatLanguageRuntimeSession(session)} ` +
+				this._logService.error(`[Runtime session] Notebook session ${formatLanguageRuntimeSession(session)} ` +
 					`does not have a notebook URI.`);
 			}
 		}

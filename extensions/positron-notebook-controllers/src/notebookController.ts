@@ -3,12 +3,13 @@
  *  Licensed under the Elastic License 2.0. See LICENSE.txt for license information.
  *--------------------------------------------------------------------------------------------*/
 import * as vscode from 'vscode';
+import * as path from 'path';
 import * as positron from 'positron';
 import { INotebookSessionDidChangeEvent, NotebookSessionService } from './notebookSessionService';
 import { JUPYTER_NOTEBOOK_TYPE } from './constants';
 import { log } from './extension';
 import { ResourceMap } from './map';
-import { getRunningNotebookSession } from './utils';
+import { getRunningNotebookSession, raceTimeout } from './utils';
 
 /** The type of a Jupyter notebook cell output. */
 enum NotebookCellOutputType {
@@ -63,6 +64,10 @@ export class NotebookController implements vscode.Disposable {
 		this.controller.executeHandler = this.executeCells.bind(this);
 		this.controller.supportedLanguages = [this._runtimeMetadata.languageId, 'raw'];
 
+		this.controller.interruptHandler = async (notebook) => {
+			console.log(`Interrupting notebook ${notebook.uri.toString()}`);
+		};
+
 		this._disposables.push(this.controller);
 
 		this._disposables.push(this.controller.onDidChangeSelectedNotebooks(async (e) => {
@@ -78,10 +83,10 @@ export class NotebookController implements vscode.Disposable {
 					this.startRuntimeSession(e.notebook),
 				]);
 			} else {
-				const session = await getRunningNotebookSession(e.notebook.uri);
-				if (session) {
-					await session.shutdown(positron.RuntimeExitReason.Shutdown);
-				}
+				console.log(this._notebookSessionService.hasStartingOrRunningNotebookSession(e.notebook.uri));
+				// TODO: Do we need to await this before setting the context?
+				await positron.runtime.shutdownNotebookSession(e.notebook.uri);
+				// TODO: Make this a positron event? Or rename the event?
 				this._onDidChangeNotebookSession.fire({ notebookUri: e.notebook.uri, session: undefined });
 			}
 		}));
@@ -100,7 +105,11 @@ export class NotebookController implements vscode.Disposable {
 	 */
 	private async startRuntimeSession(notebook: vscode.NotebookDocument): Promise<positron.LanguageRuntimeSession> {
 		try {
-			const session = await positron.runtime.startLanguageRuntime(this._runtimeMetadata.runtimeId, notebook.uri.path, notebook.uri);
+			const session = await positron.runtime.startLanguageRuntime(
+				this._runtimeMetadata.runtimeId,
+				path.basename(notebook.uri.path),
+				notebook.uri,
+			);
 			this._onDidChangeNotebookSession.fire({ notebookUri: notebook.uri, session });
 			return session;
 		} catch (err) {
@@ -170,24 +179,61 @@ export class NotebookController implements vscode.Disposable {
 		}
 
 		// Get the notebook's session.
+		// TODO: The problem is that this state doesn't exclude shutting down sessions and neither
+		//       does the session state... I suppose we could exclude shutting down sessions in the
+		//       runtime session service?
 		let session = await getRunningNotebookSession(notebook.uri);
 
 		// No session has been started for this notebook, start one.
 		if (!session) {
+			console.log(`[Runtime session] No running session for notebook, starting a new one`);
 			session = await vscode.window.withProgress(this.startProgressOptions(notebook), () => this.startRuntimeSession(notebook));
 		}
+
+		// If the session is still starting, wait for it to be ready.
+		if (session.state === positron.RuntimeState.Starting) {
+			console.log(`[Runtime session] Waiting for notebook session to start`);
+			const started = await vscode.window.withProgress(
+				this.startProgressOptions(notebook),
+				() => raceTimeout(
+					new Promise<boolean>(resolve => {
+						const disposable = session.onDidChangeRuntimeState(state => {
+							if (state === positron.RuntimeState.Ready) {
+								disposable.dispose();
+								resolve(true);
+							}
+						});
+					}),
+					10_000,
+				)
+			);
+			if (!started) {
+				// TODO: Should we show an error message here? Force quit option? How to reconcile with Positron core?
+				// Positron should offer to force quit the session if it gets stuck in the starting state.
+				throw new Error(vscode.l10n.t('The {0} interpreter for "{1}" is taking longer than expected to start.', this.label, notebook.uri.path));
+			}
+		}
+
+		console.log(`[Runtime session] Executing cell with session ${session.metadata.sessionId}, state: ${session.state}`);
 
 		// Create a cell execution.
 		const currentExecution = this.controller.createNotebookCellExecution(cell);
 
 		// If the cell's stop button is pressed, interrupt the runtime.
-		currentExecution.token.onCancellationRequested(session.interrupt.bind(session));
+		currentExecution.token.onCancellationRequested(async () => {
+			await session.interrupt();
+		});
 
 		// Start the execution timer.
 		currentExecution.start(Date.now());
 
 		// Clear any existing outputs.
 		await currentExecution.clearOutput();
+
+		if (currentExecution.token.isCancellationRequested) {
+			currentExecution.end(false, Date.now());
+			return;
+		}
 
 		const cellId = `positron-notebook-cell-${NotebookController._CELL_COUNTER++}`;
 
@@ -199,6 +245,7 @@ export class NotebookController implements vscode.Disposable {
 				mode: positron.RuntimeCodeExecutionMode.Interactive,
 				errorBehavior: positron.RuntimeErrorBehavior.Stop,
 				callback: message => this.handleMessageForCellExecution(message, currentExecution, session),
+				token: currentExecution.token,
 			});
 			currentExecution.end(true, Date.now());
 		} catch (error) {
@@ -277,6 +324,7 @@ function executeCode(
 		mode: positron.RuntimeCodeExecutionMode;
 		errorBehavior: positron.RuntimeErrorBehavior;
 		callback: (message: positron.LanguageRuntimeMessage) => Promise<unknown>;
+		token: vscode.CancellationToken;
 	}
 ) {
 	return new Promise<void>((resolve, reject) => {
@@ -316,6 +364,7 @@ function executeCode(
 
 		// Execute the cell.
 		try {
+			console.log(`[Runtime session] Executing code with session ${options.session.metadata.sessionId}, code: ${options.code}`);
 			options.session.execute(
 				options.code,
 				options.id,

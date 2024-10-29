@@ -20,9 +20,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	// Shutdown any running sessions when a notebook is closed.
 	context.subscriptions.push(vscode.workspace.onDidCloseNotebookDocument(async (notebook) => {
 		log.debug(`Notebook closed: ${notebook.uri.path}`);
-		if (notebookSessionService.hasStartingOrRunningNotebookSession(notebook.uri)) {
-			await notebookSessionService.shutdownRuntimeSession(notebook.uri);
-		}
+		// TODO: Do we need to await this before setting the context?
+		await positron.runtime.shutdownNotebookSession(notebook.uri);
+		setHasRunningNotebookSessionContext(false);
 	}));
 
 	const manager = new NotebookControllerManager(notebookSessionService);

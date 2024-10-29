@@ -615,8 +615,16 @@ export class ExtHostLanguageRuntime implements extHostProtocol.ExtHostLanguageRu
 		}, 2000, 5);
 	}
 
-	public getSessions(): Promise<positron.LanguageRuntimeSession[]> {
-		return Promise.resolve(this._runtimeSessions);
+	public async getSessions(): Promise<positron.LanguageRuntimeSession[]> {
+		const sessionMetadatas = await this._proxy.$getSessions();
+		const sessions: positron.LanguageRuntimeSession[] = [];
+		for (const sessionMetadata of sessionMetadatas) {
+			const session = this._runtimeSessions.find(session => session.metadata.sessionId === sessionMetadata.sessionId);
+			if (!session) {
+				throw new Error(`Session ID '${sessionMetadata.sessionId}' exists but is not known to the extension host.`);
+			}
+		}
+		return sessions;
 	}
 
 	public async getForegroundSession(): Promise<positron.LanguageRuntimeSession | undefined> {
