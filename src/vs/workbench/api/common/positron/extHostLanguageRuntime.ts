@@ -791,6 +791,15 @@ export class ExtHostLanguageRuntime implements extHostProtocol.ExtHostLanguageRu
 	}
 
 	/**
+	 * Shuts down a notebook session.
+	 *
+	 * @param notebookUri The URI of the notebook document.
+	 */
+	public shutdownNotebookSession(notebookUri: URI): Promise<void> {
+		return this._proxy.$shutdownNotebookSession(notebookUri);
+	}
+
+	/**
 	 * Handles a comm open message from the language runtime by either creating
 	 * a client instance for it or passing it to a registered client handler.
 	 *

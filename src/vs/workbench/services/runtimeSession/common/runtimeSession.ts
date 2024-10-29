@@ -99,6 +99,10 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 	// has shut down. This is keyed by the session ID.
 	private readonly _shuttingDownRuntimesBySessionId = new Map<string, Promise<void>>();
 
+	// A map of notebooks currently shutting down to promises that resolve when the session
+	// has shut down. This is keyed by the notebook URI.
+	private readonly _shuttingDownNotebooksByNotebookUri = new ResourceMap<DeferredPromise<void>>();
+
 	// A map of the currently active console sessions. Since we can currently
 	// only have one console session per language, this is keyed by the
 	// languageId (metadata.languageId) of the session.
@@ -320,8 +324,8 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		const key = getSessionMapKey(sessionMode, runtimeId, notebookUri);
 		value.p.finally(() => {
 			if (this._startingSessionsBySessionMapKey.get(key) === value) {
-			this._startingSessionsBySessionMapKey.delete(key);
-		}
+				this._startingSessionsBySessionMapKey.delete(key);
+			}
 		});
 		this._startingSessionsBySessionMapKey.set(key, value);
 	}
@@ -360,6 +364,85 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			LanguageRuntimeSessionMode.Console,
 			undefined, // No notebook URI (console session)
 			source);
+	}
+
+	async shutdownNotebookSession(notebookUri: URI, exitReason: RuntimeExitReason): Promise<void> {
+		// If there is a pending shutdown request for this notebook, return the existing promise.
+		const shuttingDownPromise = this._shuttingDownNotebooksByNotebookUri.get(notebookUri);
+		if (shuttingDownPromise && !shuttingDownPromise.isSettled) {
+			return shuttingDownPromise.p;
+		}
+
+		// Create a promise that resolves when the runtime is shut down.
+		const shutdownPromise = new DeferredPromise<void>();
+		this._shuttingDownNotebooksByNotebookUri.set(notebookUri, shutdownPromise);
+
+		// Remove the promise from the map of shutting down notebooks when it completes.
+		shutdownPromise.p.finally(() => {
+			if (this._shuttingDownNotebooksByNotebookUri.get(notebookUri) === shutdownPromise) {
+				this._shuttingDownNotebooksByNotebookUri.delete(notebookUri);
+			}
+		});
+
+		// Get the session for the notebook.
+		let session = this._notebookSessionsByNotebookUri.get(notebookUri);
+
+		// If there's no active session for the notebook but a session is still starting,
+		// wait for it to be ready.
+		if (!session) {
+			const startingRuntime = this._startingNotebooksByNotebookUri.get(notebookUri);
+			if (startingRuntime) {
+				const startingPromise = this.getStartingSessionPromise(
+					LanguageRuntimeSessionMode.Notebook, startingRuntime.runtimeId, notebookUri);
+				if (startingPromise && !startingPromise.isSettled) {
+					let sessionId: string;
+					try {
+						sessionId = await startingPromise.p;
+					} catch (error) {
+						// If the starting session errored, don't continue this operation.
+						// We assume that the error was handled elsewhere and a new session can be
+						// started by the user.
+						this._logService.error(
+							`Aborting shutdown request for notebook '${notebookUri.toString()}'. ` +
+							`Failed to start session. Reason: ${JSON.stringify(error)}`
+						);
+						shutdownPromise.complete();
+						return;
+					}
+					session = this._activeSessionsBySessionId.get(sessionId)?.session;
+					if (!session) {
+						this._logService.error(
+							`Aborting shutdown request for notebook '${notebookUri.toString()}'. ` +
+							`Session '${sessionId}' was started, but no active session was found`
+						);
+						shutdownPromise.complete();
+						return;
+					}
+				}
+			}
+		}
+
+		// If we still couldn't find an active session, there's nothing to do.
+		if (!session) {
+			this._logService.debug(
+				`Aborting shutdown request for notebook '${notebookUri.toString()}'. ` +
+				`No active session found`
+			);
+			shutdownPromise.complete();
+			return;
+		}
+
+		// Actually shutdown the session.
+		try {
+			await this.shutdownRuntimeSession(session, exitReason);
+			shutdownPromise.complete();
+		} catch (error) {
+			this._logService.error(
+				`Failed to shutdown session for notebook '${notebookUri.toString()}'. Reason: ${error}`
+			);
+			shutdownPromise.error(error);
+			throw error;
+		}
 	}
 
 	/**
@@ -493,6 +576,16 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 					`${formatLanguageRuntimeMetadata(startingLanguageRuntime)} ` +
 					`is already starting for the notebook ${notebookUri.toString()}. ` +
 					`Request source: ${source}`);
+			}
+
+			// If there is already a runtime that is shutting down for the notebook, wait for it to complete.
+			const shuttingDownPromise = this._shuttingDownNotebooksByNotebookUri.get(notebookUri);
+			if (shuttingDownPromise && !shuttingDownPromise.isSettled) {
+				try {
+					await shuttingDownPromise.p;
+				} catch (error) {
+					// Try to start anyway; we assume the error is handled elsewhere.
+				}
 			}
 
 			// If there is already a runtime running for the notebook, throw an error.

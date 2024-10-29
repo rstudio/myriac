@@ -1239,6 +1239,12 @@ export class MainThreadLanguageRuntime
 			'Extension-requested runtime restart via Positron API');
 	}
 
+	$shutdownNotebookSession(notebookUri: URI): Promise<void> {
+		return this._runtimeSessionService.shutdownNotebookSession(
+			URI.revive(notebookUri),
+			RuntimeExitReason.Shutdown);
+	}
+
 	// Signals that language runtime discovery is complete.
 	$completeLanguageRuntimeDiscovery(): void {
 		this._runtimeStartupService.completeDiscovery();

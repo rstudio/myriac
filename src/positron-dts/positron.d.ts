@@ -93,6 +93,9 @@ declare module 'positron' {
 		/** The runtime is busy executing code. */
 		Busy = 'busy',
 
+		/** The runtime is in the process of shutting down. */
+		Exiting = 'exiting',
+
 		/** The runtime's host process has ended. */
 		Exited = 'exited',
 
@@ -1287,6 +1290,15 @@ declare module 'positron' {
 		 * @param sessionId The ID of the session to restart.
 		 */
 		export function restartSession(sessionId: string): Thenable<void>;
+
+		/**
+		 * Shut down a running notebook session.
+		 *
+		 * @param notebookUri The URI of the notebook session to shut down.
+		 * @param exitReason The reason for shutting down the session.
+		 */
+		// export function shutdownSession(runtimeId: string, notebookUri: vscode.Uri | undefined, exitReason: RuntimeExitReason): Thenable<void>;
+		export function shutdownNotebookSession(notebookUri: vscode.Uri): Thenable<void>;
 
 		/**
 		 * Register a handler for runtime client instances. This handler will be called

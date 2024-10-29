@@ -269,7 +269,7 @@ suite('Positron - RuntimeSessionService', () => {
 
 			await runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown);
 
-			assert.equal(session.getRuntimeState(), RuntimeState.Exiting);
+			assert.equal(session.getRuntimeState(), RuntimeState.Exited);
 			assertServiceState({ notebookSession: session });
 		});
 
@@ -342,7 +342,7 @@ suite('Positron - RuntimeSessionService', () => {
 				runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown),
 			]);
 
-			assert.equal(session.getRuntimeState(), RuntimeState.Exiting);
+			assert.equal(session.getRuntimeState(), RuntimeState.Exited);
 			assertServiceState({ notebookSession: session });
 		});
 
@@ -392,7 +392,7 @@ suite('Positron - RuntimeSessionService', () => {
 				runtimeSessionService.shutdownNotebookSession(notebookUri, RuntimeExitReason.Shutdown),
 			]);
 
-			assert.equal(session.getRuntimeState(), RuntimeState.Exiting);
+			assert.equal(session.getRuntimeState(), RuntimeState.Exited);
 		});
 	});
 

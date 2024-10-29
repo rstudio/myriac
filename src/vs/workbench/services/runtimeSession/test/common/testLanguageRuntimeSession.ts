@@ -166,13 +166,18 @@ export class TestLanguageRuntimeSession extends Disposable implements ILanguageR
 	}
 
 	async shutdown(exitReason: RuntimeExitReason): Promise<void> {
-		this._onDidChangeRuntimeState.fire(RuntimeState.Exited);
-		this._onDidEndSession.fire({
-			runtime_name: this.runtimeMetadata.runtimeName,
-			exit_code: 0,
-			reason: exitReason,
-			message: '',
-		});
+		this._onDidChangeRuntimeState.fire(RuntimeState.Exiting);
+
+		// Complete the shutdown on the next tick, trying to match real runtime behavior.
+		setTimeout(() => {
+			this._onDidChangeRuntimeState.fire(RuntimeState.Exited);
+			this._onDidEndSession.fire({
+				runtime_name: this.runtimeMetadata.runtimeName,
+				exit_code: 0,
+				reason: exitReason,
+				message: '',
+			});
+		}, 0);
 	}
 
 	async forceQuit(): Promise<void> {
