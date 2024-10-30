@@ -394,6 +394,32 @@ suite('Positron - RuntimeSessionService', () => {
 
 			assert.equal(session.getRuntimeState(), RuntimeState.Exited);
 		});
+
+		test('start console three times successively', async () => {
+			const session1 = await startSession();
+			const session2 = await startSession();
+			const session3 = await startSession();
+
+			// Check that the same session was returned each time.
+			assert.equal(session1, session2);
+			assert.equal(session2, session3);
+
+			// Check that only one session was started.
+			assertServiceState({ hasStartingOrRunningConsole: true, consoleSession: session1 });
+		});
+
+		test('start notebook three times successively', async () => {
+			const session1 = await startSession(notebookUri);
+			const session2 = await startSession(notebookUri);
+			const session3 = await startSession(notebookUri);
+
+			// Check that the same session was returned each time.
+			assert.equal(session1, session2);
+			assert.equal(session2, session3);
+
+			// Check that only one session was started.
+			assertServiceState({ notebookSession: session1 });
+		});
 	});
 
 	// test.skip('restart a console session with "ready" state', async () => {
