@@ -621,8 +621,10 @@ export class ExtHostLanguageRuntime implements extHostProtocol.ExtHostLanguageRu
 		for (const sessionMetadata of sessionMetadatas) {
 			const session = this._runtimeSessions.find(session => session.metadata.sessionId === sessionMetadata.sessionId);
 			if (!session) {
+				// TODO: Should we throw here or just drop the session?
 				throw new Error(`Session ID '${sessionMetadata.sessionId}' exists but is not known to the extension host.`);
 			}
+			sessions.push(session);
 		}
 		return sessions;
 	}
