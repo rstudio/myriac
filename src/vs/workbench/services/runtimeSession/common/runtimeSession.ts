@@ -669,17 +669,17 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			this._startingNotebooksByNotebookUri.set(sessionMetadata.notebookUri, runtimeMetadata);
 		}
 
-		// Create a promise that resolves when the runtime is ready to use.
-		const startPromise = this.createStartingSessionPromise(
-			sessionMetadata.sessionMode,
-			runtimeMetadata.runtimeId,
-			sessionMetadata.notebookUri);
-
 		// We should already have a session manager registered, since we can't
 		// get here until the extension host has been activated.
 		if (this._sessionManagers.length === 0) {
 			throw new Error(`No session manager has been registered.`);
 		}
+
+		// Create a promise that resolves when the runtime is ready to use.
+		const startPromise = this.createStartingSessionPromise(
+			sessionMetadata.sessionMode,
+			runtimeMetadata.runtimeId,
+			sessionMetadata.notebookUri);
 
 		// Restore the session. This can take some time; it may involve waiting
 		// for the extension to finish activating and the network to attempt to
