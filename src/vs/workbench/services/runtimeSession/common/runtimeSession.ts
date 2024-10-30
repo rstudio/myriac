@@ -343,6 +343,8 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		const key = getSessionMapKey(sessionMode, runtimeId, notebookUri);
 		promise.p.then(sessionId => {
 			this._logService.debug(`[Runtime session] Session ${sessionId} has started`);
+		}).catch(() => {
+			// Do nothing; this is to avoid unhandled promise rejection warnings.
 		}).finally(() => {
 			if (this._startingSessionsBySessionMapKey.get(key) === promise) {
 				this._startingSessionsBySessionMapKey.delete(key);
