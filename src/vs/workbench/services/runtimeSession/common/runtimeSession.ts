@@ -551,93 +551,63 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			(notebookUri ? `for notebook ${notebookUri.toString()} ` : '') +
 			`(Source: ${source})`);
 
+		if (sessionMode === LanguageRuntimeSessionMode.Console) {
+			return this.startNewConsoleRuntimeSession(languageRuntime, sessionName, source);
+		} else if (sessionMode === LanguageRuntimeSessionMode.Notebook) {
+			if (!notebookUri) {
+				throw new Error(`Notebook URI is required for notebook sessions.`);
+			}
+			return this.startNewNotebookRuntimeSession(languageRuntime, sessionName, notebookUri, source);
+		} else {
+			throw new Error(`Unknown session mode: ${sessionMode}`);
+		}
+	}
+
+	async startNewConsoleRuntimeSession(
+		languageRuntime: ILanguageRuntimeMetadata,
+		sessionName: string,
+		source: string,
+	): Promise<string> {
+
 		// See if we are already starting the requested session. If we
 		// are, return the promise that resolves when the session is ready to
 		// use. This makes it possible for multiple requests to start the same
 		// session to be coalesced.
-		const startingRuntimePromise = this.getStartingSessionPromise(sessionMode, runtimeId, notebookUri);
+		const startingRuntimePromise = this.getStartingSessionPromise(
+			LanguageRuntimeSessionMode.Console, languageRuntime.runtimeId, undefined);
 		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
-			this._logService.debug(`[Runtime session] Session for runtime ${runtimeId} ` +
+			this._logService.debug(`[Runtime session] Session for runtime ${languageRuntime.runtimeId} ` +
 				`is already starting. Returning existing promise.`);
 			return startingRuntimePromise.p;
 		}
 
-		// Create a promise that resolves when the runtime is ready to use.
-		const startPromise = this.createStartingSessionPromise(sessionMode, runtimeId, notebookUri);
+		// If there is already a runtime starting for the language, throw an error.
+		const startingLanguageRuntime = this._startingConsolesByLanguageId.get(languageRuntime.languageId);
+		if (startingLanguageRuntime) {
+			throw new Error(`Session for language runtime ` +
+				`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+				`cannot be started because language runtime ` +
+				`${formatLanguageRuntimeMetadata(startingLanguageRuntime)} ` +
+				`is already starting for the language. ` +
+				`Request source: ${source}`);
+		}
 
-		if (sessionMode === LanguageRuntimeSessionMode.Console) {
-			// If there is already a runtime starting for the language, throw an error.
-			const startingLanguageRuntime = this._startingConsolesByLanguageId.get(
-				languageRuntime.languageId);
-			if (startingLanguageRuntime) {
-				throw new Error(`Session for language runtime ` +
+		// If there is already a runtime running for the language, throw an error.
+		const runningLanguageRuntime =
+			this._consoleSessionsByLanguageId.get(languageRuntime.languageId);
+		if (runningLanguageRuntime) {
+			const metadata = runningLanguageRuntime.runtimeMetadata;
+			if (metadata.runtimeId === languageRuntime.runtimeId) {
+				// If the runtime that is running is the one we were just asked
+				// to start, we're technically in good shape since the runtime
+				// is already running!
+				return runningLanguageRuntime.sessionId;
+			} else {
+				throw new Error(`A console for ` +
 					`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
-					`cannot be started because language runtime ` +
-					`${formatLanguageRuntimeMetadata(startingLanguageRuntime)} ` +
-					`is already starting for the language. ` +
-					`Request source: ${source}`);
-			}
-
-			// If there is already a runtime running for the language, throw an error.
-			const runningLanguageRuntime =
-				this._consoleSessionsByLanguageId.get(languageRuntime.languageId);
-			if (runningLanguageRuntime) {
-				const metadata = runningLanguageRuntime.runtimeMetadata;
-				if (metadata.runtimeId === runtimeId) {
-					// If the runtime that is running is the one we were just asked
-					// to start, we're technically in good shape since the runtime
-					// is already running!
-					return runningLanguageRuntime.sessionId;
-				} else {
-					throw new Error(`A console for ` +
-						`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
-						`cannot be started because a console for ` +
-						`${formatLanguageRuntimeMetadata(metadata)} is already running ` +
-						`for the ${metadata.languageName} language.`);
-				}
-			}
-		} else if (sessionMode === LanguageRuntimeSessionMode.Notebook) {
-			if (!notebookUri) {
-				throw new Error('A notebook URI must be provided when starting a notebook session.');
-			}
-
-			// If there is already a runtime starting for the language, throw an error.
-			const startingLanguageRuntime = this._startingNotebooksByNotebookUri.get(notebookUri);
-			if (startingLanguageRuntime) {
-				throw new Error(`Session for language runtime ` +
-					`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
-					`cannot be started because language runtime ` +
-					`${formatLanguageRuntimeMetadata(startingLanguageRuntime)} ` +
-					`is already starting for the notebook ${notebookUri.toString()}. ` +
-					`Request source: ${source}`);
-			}
-
-			// If there is already a runtime that is shutting down for the notebook, wait for it to complete.
-			const shuttingDownPromise = this._shuttingDownNotebooksByNotebookUri.get(notebookUri);
-			if (shuttingDownPromise && !shuttingDownPromise.isSettled) {
-				try {
-					await shuttingDownPromise.p;
-				} catch (error) {
-					// Try to start anyway; we assume the error is handled elsewhere.
-				}
-			}
-
-			// If there is already a runtime running for the notebook, throw an error.
-			const runningLanguageRuntime = this._notebookSessionsByNotebookUri.get(notebookUri);
-			if (runningLanguageRuntime) {
-				const metadata = runningLanguageRuntime.runtimeMetadata;
-				if (metadata.runtimeId === runtimeId) {
-					// If the runtime that is running is the one we were just asked
-					// to start, we're technically in good shape since the runtime
-					// is already running!
-					return runningLanguageRuntime.sessionId;
-				} else {
-					throw new Error(`A session for ` +
-						`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
-						`cannot be started because a session for ` +
-						`${formatLanguageRuntimeMetadata(metadata)} is already running ` +
-						`for the notebook ${notebookUri.toString()}.`);
-				}
+					`cannot be started because a console for ` +
+					`${formatLanguageRuntimeMetadata(metadata)} is already running ` +
+					`for the ${metadata.languageName} language.`);
 			}
 		}
 
@@ -647,14 +617,109 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			return this.autoStartRuntime(languageRuntime, source);
 		}
 
+		// Create a promise that resolves when the runtime is ready to use.
+		const startPromise = this.createStartingSessionPromise(
+			LanguageRuntimeSessionMode.Console, languageRuntime.runtimeId, undefined);
+
 		// Start the runtime.
 		this._logService.info(
 			`Starting session for language runtime ` +
 			`${formatLanguageRuntimeMetadata(languageRuntime)} (Source: ${source})`);
-		// Create and start the session.
 		try {
 			const sessionId = await this.doCreateRuntimeSession(
-				languageRuntime, sessionName, sessionMode, source, notebookUri);
+				languageRuntime, sessionName, LanguageRuntimeSessionMode.Console, source, undefined);
+			startPromise.complete(sessionId);
+			return sessionId;
+		} catch (err) {
+			startPromise.error(err);
+			throw err;
+		}
+	}
+
+	async startNewNotebookRuntimeSession(
+		languageRuntime: ILanguageRuntimeMetadata,
+		sessionName: string,
+		notebookUri: URI,
+		source: string,
+	): Promise<string> {
+
+		// See if we are already starting the requested session. If we
+		// are, return the promise that resolves when the session is ready to
+		// use. This makes it possible for multiple requests to start the same
+		// session to be coalesced.
+		const startingRuntimePromise = this.getStartingSessionPromise(
+			LanguageRuntimeSessionMode.Notebook, languageRuntime.runtimeId, notebookUri);
+		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
+			this._logService.debug(`[Runtime session] Session for runtime ${languageRuntime.runtimeId} ` +
+				`is already starting. Returning existing promise.`);
+			return startingRuntimePromise.p;
+		}
+
+		// If there is already a runtime starting for the notebook, throw an error.
+		const startingLanguageRuntime = this._startingNotebooksByNotebookUri.get(notebookUri);
+		if (startingLanguageRuntime) {
+			throw new Error(`Session for language runtime ` +
+				`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+				`cannot be started because language runtime ` +
+				`${formatLanguageRuntimeMetadata(startingLanguageRuntime)} ` +
+				`is already starting for the notebook ${notebookUri.toString()}. ` +
+				`Request source: ${source}`);
+		}
+
+		// If the workspace is not trusted, throw an error.
+		if (!this._workspaceTrustManagementService.isWorkspaceTrusted()) {
+			throw new Error(`Session for language runtime ` +
+				`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+				`cannot be started because the workspace is not trusted.`);
+		}
+
+		// Create a promise that resolves when the runtime is ready to use.
+		const startPromise = this.createStartingSessionPromise(
+			LanguageRuntimeSessionMode.Notebook, languageRuntime.runtimeId, notebookUri);
+
+		// Add the runtime to the set of starting notebooks.
+		this._startingNotebooksByNotebookUri.set(notebookUri, languageRuntime);
+
+		// If there is already a runtime that is shutting down for the notebook, wait for it to complete.
+		const shuttingDownPromise = this._shuttingDownNotebooksByNotebookUri.get(notebookUri);
+		if (shuttingDownPromise && !shuttingDownPromise.isSettled) {
+			try {
+				await shuttingDownPromise.p;
+			} catch (error) {
+				// Continue anyway; we assume the error is handled elsewhere.
+			}
+		}
+
+		// If there is already a runtime running for the notebook, throw an error.
+		const runningLanguageRuntime = this._notebookSessionsByNotebookUri.get(notebookUri);
+		if (runningLanguageRuntime) {
+			const metadata = runningLanguageRuntime.runtimeMetadata;
+			if (metadata.runtimeId === languageRuntime.runtimeId) {
+				// If the runtime that is running is the one we were just asked
+				// to start, we're technically in good shape since the runtime
+				// is already running!
+				startPromise.complete(runningLanguageRuntime.sessionId);
+				this._startingNotebooksByNotebookUri.delete(notebookUri);
+				return runningLanguageRuntime.sessionId;
+			} else {
+				const err = new Error(`A session for ` +
+					`${formatLanguageRuntimeMetadata(languageRuntime)} ` +
+					`cannot be started because a session for ` +
+					`${formatLanguageRuntimeMetadata(metadata)} is already running ` +
+					`for the notebook ${notebookUri.toString()}.`);
+				startPromise.error(err);
+				this._startingNotebooksByNotebookUri.delete(notebookUri);
+				throw err;
+			}
+		}
+
+		// Start the runtime.
+		this._logService.info(
+			`Starting session for language runtime ` +
+			`${formatLanguageRuntimeMetadata(languageRuntime)} (Source: ${source})`);
+		try {
+			const sessionId = await this.doCreateRuntimeSession(
+				languageRuntime, sessionName, LanguageRuntimeSessionMode.Notebook, source, notebookUri);
 			startPromise.complete(sessionId);
 			return sessionId;
 		} catch (err) {
