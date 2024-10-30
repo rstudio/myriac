@@ -330,7 +330,9 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 	): DeferredPromise<string> {
 		const promise = new DeferredPromise<string>();
 		const key = getSessionMapKey(sessionMode, runtimeId, notebookUri);
-		promise.p.finally(() => {
+		promise.p.then(sessionId => {
+			this._logService.debug(`[Runtime session] Session ${sessionId} has started`);
+		}).finally(() => {
 			if (this._startingSessionsBySessionMapKey.get(key) === promise) {
 				this._startingSessionsBySessionMapKey.delete(key);
 			}
