@@ -302,10 +302,21 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 
 	getSessions(): ILanguageRuntimeSession[] {
 		// Return activeSessions without any sessions that are currently shutting down.
-		return Array.from(this._activeSessionsBySessionId.values())
-			.filter(info => !this._shuttingDownRuntimesBySessionId.has(info.session.sessionId) &&
-				!(info.session.metadata.notebookUri && this._shuttingDownNotebooksByNotebookUri.has(info.session.metadata.notebookUri)))
-			.map(info => info.session);
+		const allSessions = Array.from(this._activeSessionsBySessionId.values());
+		this._logService.debug(`[Runtime session] getSessions() allSessions: ${allSessions.length}`);
+		const shuttingDownSessions = Array.from(this._shuttingDownRuntimesBySessionId.keys());
+		this._logService.debug(`[Runtime session] getSessions() shuttingDownSessions: ${shuttingDownSessions.length}`);
+		const shuttingDownNotebookSessions = Array.from(this._shuttingDownNotebooksByNotebookUri.keys());
+		this._logService.debug(`[Runtime session] getSessions() shuttingDownNotebookSessions: ${shuttingDownNotebookSessions.length}`);
+		const sessions = allSessions
+			.map(info => info.session)
+			.filter(session =>
+				// Exclude sessions that are shutting down.
+				!this._shuttingDownRuntimesBySessionId.has(session.sessionId) &&
+				// Exclude notebook sessions that are shutting down.
+				!(session.metadata.notebookUri && this._shuttingDownNotebooksByNotebookUri.has(session.metadata.notebookUri)));
+		this._logService.debug(`[Runtime session] getSessions() sessions: ${sessions.length}`);
+		return sessions;
 	}
 
 	/**
