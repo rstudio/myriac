@@ -73,6 +73,9 @@ export class NotebookController implements vscode.Disposable {
 		this._disposables.push(this.controller.onDidChangeSelectedNotebooks(async (e) => {
 			log.debug(`Notebook ${e.notebook.uri}, controller ${this.label}, selected ${e.selected}`);
 
+			// TODO: Remove this
+			console.log(this._notebookSessionService.hasStartingOrRunningNotebookSession(e.notebook.uri));
+
 			// Has this controller been selected for a notebook?
 			if (e.selected) {
 				// Note that this is also reached when a notebook is opened, if this controller was
@@ -80,21 +83,33 @@ export class NotebookController implements vscode.Disposable {
 
 				await Promise.all([
 					updateNotebookLanguage(e.notebook, _runtimeMetadata.languageId),
-					this.startRuntimeSession(e.notebook),
+					this.selectRuntimeSession(e.notebook),
 				]);
-			} else {
-				console.log(this._notebookSessionService.hasStartingOrRunningNotebookSession(e.notebook.uri));
-				// TODO: Do we need to await this before setting the context?
-				await positron.runtime.shutdownNotebookSession(e.notebook.uri);
-				// TODO: Make this a positron event? Or rename the event?
-				this._onDidChangeNotebookSession.fire({ notebookUri: e.notebook.uri, session: undefined });
 			}
+
+			// TODO: It's possible that a user selected a non-Positron controller. In that case,
+			//       we're currently leaving the Positron session running. We might want to clean
+			//       that up. We don't simply shutdown when !e.selected since the deselection event
+			//       can fire after the selection event which will error trying to start a session
+			//       from one runtime while a session from another runtime is already running.
 		}));
 	}
 
 	/** The human-readable label of the controller. */
 	public get label(): string {
 		return this._runtimeMetadata.runtimeName;
+	}
+
+	private async selectRuntimeSession(notebook: vscode.NotebookDocument): Promise<void> {
+		// If there's an existing session from another runtime, shut it down.
+		const session = await getRunningNotebookSession(notebook.uri);
+		if (session && session.runtimeMetadata.runtimeId !== this._runtimeMetadata.runtimeId) {
+			await positron.runtime.shutdownNotebookSession(notebook.uri);
+			this._onDidChangeNotebookSession.fire({ notebookUri: notebook.uri, session: undefined });
+		}
+
+		// Start the new session.
+		await this.startRuntimeSession(notebook);
 	}
 
 	/**
