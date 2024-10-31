@@ -551,6 +551,18 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			(notebookUri ? `for notebook ${notebookUri.toString()} ` : '') +
 			`(Source: ${source})`);
 
+		// See if we are already starting the requested session. If we
+		// are, return the promise that resolves when the session is ready to
+		// use. This makes it possible for multiple requests to start the same
+		// session to be coalesced.
+		const startingRuntimePromise = this.getStartingSessionPromise(
+			LanguageRuntimeSessionMode.Console, languageRuntime.runtimeId, undefined);
+		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
+			this._logService.debug(`[Runtime session] Session for runtime ${languageRuntime.runtimeId} ` +
+				`is already starting. Returning existing promise.`);
+			return startingRuntimePromise.p;
+		}
+
 		if (sessionMode === LanguageRuntimeSessionMode.Console) {
 			return this.startNewConsoleRuntimeSession(languageRuntime, sessionName, source);
 		} else if (sessionMode === LanguageRuntimeSessionMode.Notebook) {
@@ -568,19 +580,6 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		sessionName: string,
 		source: string,
 	): Promise<string> {
-
-		// See if we are already starting the requested session. If we
-		// are, return the promise that resolves when the session is ready to
-		// use. This makes it possible for multiple requests to start the same
-		// session to be coalesced.
-		const startingRuntimePromise = this.getStartingSessionPromise(
-			LanguageRuntimeSessionMode.Console, languageRuntime.runtimeId, undefined);
-		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
-			this._logService.debug(`[Runtime session] Session for runtime ${languageRuntime.runtimeId} ` +
-				`is already starting. Returning existing promise.`);
-			return startingRuntimePromise.p;
-		}
-
 		// If there is already a runtime starting for the language, throw an error.
 		const startingLanguageRuntime = this._startingConsolesByLanguageId.get(languageRuntime.languageId);
 		if (startingLanguageRuntime) {
@@ -642,19 +641,6 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		notebookUri: URI,
 		source: string,
 	): Promise<string> {
-
-		// See if we are already starting the requested session. If we
-		// are, return the promise that resolves when the session is ready to
-		// use. This makes it possible for multiple requests to start the same
-		// session to be coalesced.
-		const startingRuntimePromise = this.getStartingSessionPromise(
-			LanguageRuntimeSessionMode.Notebook, languageRuntime.runtimeId, notebookUri);
-		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
-			this._logService.debug(`[Runtime session] Session for runtime ${languageRuntime.runtimeId} ` +
-				`is already starting. Returning existing promise.`);
-			return startingRuntimePromise.p;
-		}
-
 		// If there is already a runtime starting for the notebook, throw an error.
 		const startingLanguageRuntime = this._startingNotebooksByNotebookUri.get(notebookUri);
 		if (startingLanguageRuntime) {
