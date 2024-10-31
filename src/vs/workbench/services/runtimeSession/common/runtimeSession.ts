@@ -342,7 +342,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		const promise = new DeferredPromise<string>();
 		const key = getSessionMapKey(sessionMode, runtimeId, notebookUri);
 		promise.p.then(sessionId => {
-			this._logService.debug(`[Runtime session] Session ${sessionId} has started`);
+			this._logService.debug(`[Runtime session] Starting session promise completed for session ${sessionId}`);
 		}).catch(() => {
 			// Do nothing; this is to avoid unhandled promise rejection warnings.
 		}).finally(() => {
@@ -556,10 +556,10 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		// use. This makes it possible for multiple requests to start the same
 		// session to be coalesced.
 		const startingRuntimePromise = this.getStartingSessionPromise(
-			LanguageRuntimeSessionMode.Console, languageRuntime.runtimeId, undefined);
+			sessionMode, languageRuntime.runtimeId, notebookUri);
 		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
-			this._logService.debug(`[Runtime session] Session for runtime ${languageRuntime.runtimeId} ` +
-				`is already starting. Returning existing promise.`);
+			this._logService.debug(`[Runtime session] Session is already starting. ` +
+				`Returning existing promise.`);
 			return startingRuntimePromise.p;
 		}
 
@@ -600,6 +600,9 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 				// If the runtime that is running is the one we were just asked
 				// to start, we're technically in good shape since the runtime
 				// is already running!
+				this._logService.debug(`[Runtime session] Session for language runtime ` +
+					`${formatLanguageRuntimeMetadata(languageRuntime)} is already running. ` +
+					`Returning existing session.`);
 				return runningLanguageRuntime.sessionId;
 			} else {
 				throw new Error(`A console for ` +
@@ -684,6 +687,9 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 				// If the runtime that is running is the one we were just asked
 				// to start, we're technically in good shape since the runtime
 				// is already running!
+				this._logService.debug(`[Runtime session] Session for language runtime ` +
+					`${formatLanguageRuntimeMetadata(languageRuntime)} is already running. ` +
+					`Returning existing session.`);
 				startPromise.complete(runningLanguageRuntime.sessionId);
 				this._startingNotebooksByNotebookUri.delete(notebookUri);
 				return runningLanguageRuntime.sessionId;

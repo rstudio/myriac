@@ -318,6 +318,25 @@ suite('Positron - RuntimeSessionService', () => {
 	});
 
 	suite('queuing', () => {
+		test('start console and notebook from the same runtime concurrently', async () => {
+			// Consoles and notebooks shouldn't interfere with each other, even for the same runtime.
+			const [consoleSession, notebookSession] = await Promise.all([
+				startSession(),
+				startSession(notebookUri),
+			]);
+
+			assert.equal(consoleSession.getRuntimeState(), RuntimeState.Starting);
+			assert.equal(notebookSession.getRuntimeState(), RuntimeState.Starting);
+
+			assertServiceState({
+				hasStartingOrRunningConsole: true,
+				consoleSession,
+				notebookSession,
+				notebookSessionForNotebookUri: notebookSession,
+				activeSessions: [consoleSession, notebookSession],
+			});
+		});
+
 		test('start console while another runtime is starting for the language', async () => {
 			const anotherRuntime = createTestLanguageRuntimeMetadata(instantiationService, disposables);
 
