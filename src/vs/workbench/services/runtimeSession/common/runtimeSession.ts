@@ -555,7 +555,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			return this.startNewConsoleRuntimeSession(languageRuntime, sessionName, source);
 		} else if (sessionMode === LanguageRuntimeSessionMode.Notebook) {
 			if (!notebookUri) {
-				throw new Error(`Notebook URI is required for notebook sessions.`);
+				throw new Error(`A notebook URI must be provided to start a notebook session.`);
 			}
 			return this.startNewNotebookRuntimeSession(languageRuntime, sessionName, notebookUri, source);
 		} else {
