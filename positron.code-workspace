@@ -1,0 +1,50 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "extensions/positron-python"
+		},
+		{
+			"path": "extensions/positron-python/python_files"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"cglicenses.json": "jsonc",
+			"*.tst": "typescript"
+		},
+		"typescript.tsdk": "node_modules/typescript/lib",
+		"emmet.excludeLanguages": [],
+		"git.ignoreLimitWarning": true,
+		"git.mergeEditor": true,
+		"remote.extensionKind": {
+			"msjsdiag.debugger-for-chrome": "workspace"
+		},
+		"rust-analyzer.linkedProjects": [
+			"cli/Cargo.toml"
+		],
+		"typescript.tsc.autoDetect": "off",
+		"debug.javascript.terminalOptions": {
+			"outFiles": [
+				"${workspaceFolder}/out/**/*.js",
+				"${workspaceFolder}/build/**/*.js"
+			]
+		},
+		"extension-test-runner.debugOptions": {
+			"outFiles": [
+				"${workspaceFolder}/extensions/*/out/**/*.js"
+			]
+		},
+		"githubPullRequests.assignCreated": "${user}",
+		"githubPullRequests.defaultMergeMethod": "squash",
+		"githubPullRequests.ignoredPullRequestBranches": [
+			"main"
+		],
+		"application.experimental.rendererProfiling": true,
+		"inlineChat.mode": "live",
+		"typescript.enablePromptUseWorkspaceTsdk": true,
+		"typescript.tsserver.experimental.useVsCodeWatcher": true
+	}
+}
