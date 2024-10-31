@@ -7,7 +7,14 @@ import * as positron from 'positron';
 import * as vscode from 'vscode';
 import { log } from './extension';
 import { NotebookController } from './notebookController';
-import { INotebookSessionDidChangeEvent, NotebookSessionService } from './notebookSessionService';
+
+export interface INotebookSessionDidChangeEvent {
+	/** The URI of the notebook corresponding to the session. */
+	readonly notebookUri: vscode.Uri;
+
+	/** The session that was set for the notebook, or undefined if it was deleted. */
+	readonly session?: positron.LanguageRuntimeSession;
+}
 
 /**
  * Manages notebook controllers.
@@ -23,12 +30,6 @@ export class NotebookControllerManager implements vscode.Disposable {
 	public readonly onDidChangeNotebookSession = this._onDidChangeNotebookSession.event;
 
 	/**
-	 *
-	 * @param _notebookSessionService The notebook session service.
-	 */
-	constructor(private readonly _notebookSessionService: NotebookSessionService) { }
-
-	/**
 	 * Create a notebook controller for a runtime.
 	 *
 	 * @param runtimeMetadata The language runtime metadata for which to create a notebook controller.
@@ -38,7 +39,7 @@ export class NotebookControllerManager implements vscode.Disposable {
 		if (this.controllers.has(runtimeId)) {
 			throw new Error(`Notebook controller already exists for runtime: ${runtimeId}`);
 		}
-		const controller = new NotebookController(runtimeMetadata, this._notebookSessionService);
+		const controller = new NotebookController(runtimeMetadata);
 		this.controllers.set(runtimeId, controller);
 		log.info(`Registered notebook controller for runtime: ${runtimeId}`);
 

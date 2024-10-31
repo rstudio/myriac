@@ -6,7 +6,6 @@
 import * as positron from 'positron';
 import * as vscode from 'vscode';
 import { NotebookControllerManager } from './notebookControllerManager';
-import { NotebookSessionService } from './notebookSessionService';
 import { registerCommands } from './commands';
 import { JUPYTER_NOTEBOOK_TYPE } from './constants';
 import { getRunningNotebookSession } from './utils';
@@ -14,9 +13,6 @@ import { getRunningNotebookSession } from './utils';
 export const log = vscode.window.createOutputChannel('Positron Notebook Controllers', { log: true });
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-	const notebookSessionService = new NotebookSessionService();
-	context.subscriptions.push(notebookSessionService);
-
 	// Shutdown any running sessions when a notebook is closed.
 	context.subscriptions.push(vscode.workspace.onDidCloseNotebookDocument(async (notebook) => {
 		log.debug(`Notebook closed: ${notebook.uri.path}`);
@@ -25,7 +21,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		setHasRunningNotebookSessionContext(false);
 	}));
 
-	const manager = new NotebookControllerManager(notebookSessionService);
+	const manager = new NotebookControllerManager();
 	context.subscriptions.push(manager);
 
 	// Register notebook controllers for newly registered runtimes.
@@ -81,7 +77,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}
 	}));
 
-	registerCommands(context, notebookSessionService);
+	registerCommands(context);
 }
 
 function setHasRunningNotebookSessionContext(value: boolean): void {

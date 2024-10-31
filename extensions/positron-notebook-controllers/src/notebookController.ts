@@ -5,11 +5,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as positron from 'positron';
-import { INotebookSessionDidChangeEvent, NotebookSessionService } from './notebookSessionService';
 import { JUPYTER_NOTEBOOK_TYPE } from './constants';
 import { log } from './extension';
 import { ResourceMap } from './map';
 import { getRunningNotebookSession, raceTimeout } from './utils';
+import { INotebookSessionDidChangeEvent } from './notebookControllerManager';
 
 /** The type of a Jupyter notebook cell output. */
 enum NotebookCellOutputType {
@@ -43,11 +43,9 @@ export class NotebookController implements vscode.Disposable {
 
 	/**
 	 * @param _runtimeMetadata The metadata of the language runtime for which this controller is responsible.
-	 * @param _notebookSessionService The notebook session service.
 	 */
 	constructor(
 		private readonly _runtimeMetadata: positron.LanguageRuntimeMetadata,
-		private readonly _notebookSessionService: NotebookSessionService,
 	) {
 		// Create a VSCode notebook controller for this language.
 		this.controller = vscode.notebooks.createNotebookController(
@@ -72,9 +70,6 @@ export class NotebookController implements vscode.Disposable {
 
 		this._disposables.push(this.controller.onDidChangeSelectedNotebooks(async (e) => {
 			log.debug(`Notebook ${e.notebook.uri}, controller ${this.label}, selected ${e.selected}`);
-
-			// TODO: Remove this
-			console.log(this._notebookSessionService.hasStartingOrRunningNotebookSession(e.notebook.uri));
 
 			// Has this controller been selected for a notebook?
 			if (e.selected) {
