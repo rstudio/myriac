@@ -6,7 +6,6 @@
 
 import { Code } from '../code';
 import * as os from 'os';
-import { IElement } from '../driver';
 import { expect, Locator } from '@playwright/test';
 
 interface FlatVariables {
@@ -27,6 +26,7 @@ const VARIABLE_INDENTED = '.name-column-indenter[style*="margin-left: 40px"]';
  *  Reuseable Positron variables functionality for tests to leverage.
  */
 export class PositronVariables {
+	interpreterLocator = this.code.driver.page.locator(VARIABLES_INTERPRETER);
 
 	constructor(private code: Code) { }
 
@@ -99,11 +99,6 @@ export class PositronVariables {
 		await this.toggleVariable({ variableName, action: 'collapse' });
 	}
 
-	async getVariablesInterpreter(): Promise<IElement> {
-		const interpreter = await this.code.waitForElement(VARIABLES_INTERPRETER);
-		return interpreter;
-	}
-
 	/**
 	 * Gets the data (value and type) for the children of a parent variable.
 	 * NOTE: it assumes that either ALL variables are collapsed or ONLY the parent variable is expanded.
@@ -136,5 +131,12 @@ export class PositronVariables {
 		if (collapseParent) { await this.collapseVariable(parentVariable); }
 
 		return result;
+	}
+
+	async selectVariablesGroup(name: string) {
+		await this.code.driver.page.locator('.positron-variables-container .action-bar-button-text').click();
+		await this.code.driver.page.locator('a.action-menu-item', { hasText: name }).isVisible();
+		await this.code.wait(500);
+		await this.code.driver.page.locator('a.action-menu-item', { hasText: name }).click();
 	}
 }

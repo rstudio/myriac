@@ -188,6 +188,24 @@
         "type": "object",
         "title": "%r.configuration.title-dev%",
         "properties": {
+          "positron.r.customRootFolders": {
+            "scope": "window",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%r.configuration.customRootFolders.markdownDescription%"
+          },
+          "positron.r.customBinaries": {
+            "scope": "window",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%r.configuration.customBinaries.markdownDescription%"
+          },
           "positron.r.kernel.path": {
             "scope": "window",
             "type": "string",
@@ -635,7 +653,7 @@
   },
   "positron": {
     "binaryDependencies": {
-      "ark": "0.1.148"
+      "ark": "0.1.149"
     },
     "minimumRVersion": "4.2.0",
     "minimumRenvVersion": "1.0.9"
