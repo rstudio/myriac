@@ -166,7 +166,11 @@ export class TestLanguageRuntimeSession extends Disposable implements ILanguageR
 	}
 
 	async shutdown(exitReason: RuntimeExitReason): Promise<void> {
-		this._onDidChangeRuntimeState.fire(RuntimeState.Exiting);
+		if (exitReason === RuntimeExitReason.Restart) {
+			this._onDidChangeRuntimeState.fire(RuntimeState.Restarting);
+		} else {
+			this._onDidChangeRuntimeState.fire(RuntimeState.Exiting);
+		}
 
 		// Complete the shutdown on the next tick, trying to match real runtime behavior.
 		setTimeout(() => {
