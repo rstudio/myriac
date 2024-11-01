@@ -152,7 +152,7 @@ export class NotebookController implements vscode.Disposable {
 	private async executeCells(cells: vscode.NotebookCell[], notebook: vscode.NotebookDocument, _controller: vscode.NotebookController) {
 		// Queue all cells for execution; catch and log any execution errors.
 		await Promise.all(cells.map(cell => this.queueCellExecution(cell, notebook)))
-			.catch(err => log.debug(`Error executing cell: ${err}`));
+			.catch(err => log.debug(`Error executing cell: ${JSON.stringify(err)}`));
 	}
 
 	/**
