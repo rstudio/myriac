@@ -105,12 +105,16 @@ export class NotebookControllerManager implements vscode.Disposable {
 		const preferredController = this.controllers.get(preferredRuntime.runtimeId);
 
 		// Set the affinity across all known controllers.
+		if (preferredController) {
+			log.debug(`Setting preferred affinity for controller: ${preferredController.label}, notebook: ${notebook.uri.path}`);
+		} else {
+			log.debug(`No preferred controller for notebook: ${notebook.uri.path}`);
+		}
 		for (const controller of this.controllers.values()) {
 			const affinity = controller === preferredController
 				? vscode.NotebookControllerAffinity.Preferred
 				: vscode.NotebookControllerAffinity.Default;
 			controller.controller.updateNotebookAffinity(notebook, affinity);
-			log.debug(`Updated notebook affinity for controller: ${controller.label}, notebook: ${notebook.uri.path}, affinity: ${affinity}`);
 		}
 	}
 
