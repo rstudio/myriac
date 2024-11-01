@@ -1233,6 +1233,18 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 						!this._consoleSessionsByLanguageId.has(session.runtimeMetadata.languageId)) {
 						this._consoleSessionsByLanguageId.set(session.runtimeMetadata.languageId,
 							session);
+					} else if (session.metadata.sessionMode === LanguageRuntimeSessionMode.Notebook) {
+						// Similarly, if this is a notebook session and there isn't already a notebook session
+						// for this notebook URI, set this one as the notebook session.
+						if (session.metadata.notebookUri) {
+							if (!this._notebookSessionsByNotebookUri.has(session.metadata.notebookUri)) {
+								this._notebookSessionsByNotebookUri.set(session.metadata.notebookUri,
+									session);
+							}
+						} else {
+							this._logService.error(`[Runtime session] Notebook session ${formatLanguageRuntimeSession(session)} ` +
+								`does not have a notebook URI.`);
+						}
 					}
 
 
