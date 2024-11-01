@@ -1356,22 +1356,22 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			state === RuntimeState.Ready) {
 			// The runtime looks like it could handle a restart request, so send
 			// one over.
+			this._logService.debug(`[Runtime session] Session can handle a restart request; restarting`);
 			return session.restart();
 		} else if (state === RuntimeState.Uninitialized ||
 			state === RuntimeState.Exited) {
 			// The runtime has never been started, or is no longer running. Just
 			// tell it to start.
-			await this.startNewRuntimeSession(session.runtimeMetadata.runtimeId,
-				session.metadata.sessionName,
-				session.metadata.sessionMode,
-				session.metadata.notebookUri,
-				`'Restart Interpreter' command invoked`);
+			this._logService.debug(`[Runtime session] Session is exited; starting`);
+			const sessionManager = await this.getManagerForRuntime(session.runtimeMetadata);
+			await this.doStartRuntimeSession(session, sessionManager, true);
 			return;
 		} else if (state === RuntimeState.Starting ||
 			state === RuntimeState.Restarting) {
 			// The runtime is already starting or restarting. We could show an
 			// error, but this is probably just the result of a user mashing the
 			// restart when we already have one in flight.
+			this._logService.debug(`[Runtime session] Session is already starting; doing nothing`);
 			return;
 		} else {
 			// The runtime is not in a state where it can be restarted.
