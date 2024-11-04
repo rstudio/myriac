@@ -3,6 +3,7 @@
  *  Licensed under the Elastic License 2.0. See LICENSE.txt for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as positron from 'positron';
 import * as vscode from 'vscode';
 import { getRunningNotebookSession } from './utils';
 
@@ -25,10 +26,7 @@ export function registerCommands(context: vscode.ExtensionContext): void {
 			await vscode.window.withProgress({
 				location: vscode.ProgressLocation.Notification,
 				title: vscode.l10n.t("Restarting {0} interpreter for '{1}'", session.runtimeMetadata.languageName, notebook.uri.path),
-			}, () => {
-				// TODO: Use positron.runtime.restartNotebookSession when it's available.
-				return Promise.resolve();
-			});
+			}, () => positron.runtime.restartSession(session.metadata.sessionId));
 		} catch (error) {
 			vscode.window.showErrorMessage(
 				vscode.l10n.t("Restarting {0} interpreter for '{1}' failed. Reason: {2}",

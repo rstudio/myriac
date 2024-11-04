@@ -121,6 +121,12 @@ export class NotebookController implements vscode.Disposable {
 				notebook.uri,
 			);
 			this._onDidChangeNotebookSession.fire({ notebookUri: notebook.uri, session });
+
+			// If the session is still starting, wait for it to become ready.
+			if (session.state === positron.RuntimeState.Starting) {
+				await waitForRuntimeState(session, positron.RuntimeState.Ready);
+			}
+
 			return session;
 		} catch (err) {
 			const retry = vscode.l10n.t('Retry');
@@ -189,39 +195,19 @@ export class NotebookController implements vscode.Disposable {
 		}
 
 		// Get the notebook's session.
-		// TODO: The problem is that this state doesn't exclude shutting down sessions and neither
-		//       does the session state... I suppose we could exclude shutting down sessions in the
-		//       runtime session service?
 		let session = await getRunningNotebookSession(notebook.uri);
 
-		// No session has been started for this notebook, start one.
-		if (!session) {
+		if (session) {
+			if (session.state === positron.RuntimeState.Starting) {
+				await vscode.window.withProgress(
+					this.startProgressOptions(notebook),
+					() => waitForRuntimeState(session!, positron.RuntimeState.Ready)
+				);
+			}
+		} else {
+			// No session has been started for this notebook, start one.
 			console.log(`[Runtime session] No running session for notebook, starting a new one`);
 			session = await vscode.window.withProgress(this.startProgressOptions(notebook), () => this.startRuntimeSession(notebook));
-		}
-
-		// If the session is still starting, wait for it to be ready.
-		if (session.state === positron.RuntimeState.Starting) {
-			console.log(`[Runtime session] Waiting for notebook session to start`);
-			const started = await vscode.window.withProgress(
-				this.startProgressOptions(notebook),
-				() => raceTimeout(
-					new Promise<boolean>(resolve => {
-						const disposable = session.onDidChangeRuntimeState(state => {
-							if (state === positron.RuntimeState.Ready) {
-								disposable.dispose();
-								resolve(true);
-							}
-						});
-					}),
-					10_000,
-				)
-			);
-			if (!started) {
-				// TODO: Should we show an error message here? Force quit option? How to reconcile with Positron core?
-				// Positron should offer to force quit the session if it gets stuck in the starting state.
-				throw new Error(vscode.l10n.t('The {0} interpreter for "{1}" is taking longer than expected to start.', this.label, notebook.uri.path));
-			}
 		}
 
 		console.log(`[Runtime session] Executing cell with session ${session.metadata.sessionId}, state: ${session.state}`);
@@ -557,4 +543,25 @@ async function handleRuntimeMessageError(
 		})
 	]);
 	await execution.appendOutput(cellOutput);
+}
+
+async function waitForRuntimeState(
+	session: positron.LanguageRuntimeSession,
+	state: positron.RuntimeState,
+	timeout = 10_000,
+) {
+	return new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			disposable.dispose();
+			reject(new vscode.CancellationError());
+		}, timeout);
+
+		const disposable = session.onDidChangeRuntimeState(newState => {
+			if (newState === state) {
+				clearTimeout(timer);
+				disposable.dispose();
+				resolve();
+			}
+		});
+	});
 }
