@@ -422,6 +422,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 				const startingPromise = this.getStartingSessionPromise(
 					LanguageRuntimeSessionMode.Notebook, startingRuntime.runtimeId, notebookUri);
 				if (startingPromise && !startingPromise.isSettled) {
+					this._logService.debug(`[Runtime session] Waiting for session to start before shutting down`);
 					let sessionId: string;
 					try {
 						sessionId = await startingPromise.p;
@@ -841,9 +842,49 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 			throw new Error(`No session with ID '${sessionId}' was found.`);
 		}
 		this._logService.info(
-			`Restarting session '` +
+			`[Runtime session] Restarting ` +
 			`${formatLanguageRuntimeSession(session)}' (Source: ${source})`);
-		await this.doRestartRuntime(session);
+
+		// If there is already a runtime starting for the session, wait for it and exit early.
+		const startingRuntimePromise = this.getStartingSessionPromise(
+			session.metadata.sessionMode, session.runtimeMetadata.runtimeId, session.metadata.notebookUri);
+		if (startingRuntimePromise && !startingRuntimePromise.isSettled) {
+			this._logService.debug(`[Runtime session] Session is already starting. ` +
+				`Returning existing promise.`);
+			await startingRuntimePromise.p;
+			return;
+		}
+
+		// Create a promise that resolves when the runtime is ready to use.
+		const startPromise = this.createStartingSessionPromise(
+			session.metadata.sessionMode, session.runtimeMetadata.runtimeId, session.metadata.notebookUri);
+
+		// If there is already a runtime that is shutting down for the notebook, wait for it to complete.
+		if (session.metadata.notebookUri) {
+			const shuttingDownPromise = this._shuttingDownNotebooksByNotebookUri.get(session.metadata.notebookUri);
+			if (shuttingDownPromise && !shuttingDownPromise.isSettled) {
+				try {
+					await shuttingDownPromise.p;
+				} catch (error) {
+					// Continue anyway; we assume the error is handled elsewhere.
+				}
+			}
+		}
+
+		// Create a promise that resolves when the runtime enters the starting state or rejects with a timeout.
+		const startingPromise = waitForRuntimeState(
+			session, RuntimeState.Starting, 10_000, new Error(`Timed out waiting for runtime ` +
+				`${formatLanguageRuntimeSession(session)} to restart.`));
+
+		// Restart the runtime and wait for the session to enter the starting state.
+		try {
+			await this.doRestartRuntime(session);
+			await startingPromise;
+			startPromise.complete(sessionId);
+		} catch (err) {
+			startPromise.error(err);
+			throw err;
+		}
 	}
 
 	/**
@@ -1406,7 +1447,7 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 	 * @param session The runtime to watch.
 	 */
 	private async waitForShutdown(session: ILanguageRuntimeSession) {
-		const warning = nls.localize('positron.runtimeShutdownTimeoutWarning', "{0} isn't responding to your request to shut down the session. Do you want use a forced quit to end your {1} session? You'll lose any unsaved objects.", session.metadata.sessionName, session.runtimeMetadata.languageName);
+		const warning = nls.localize('positron.runtimeShutdownTimeoutWarning', "{0} isn't responding to your request to shut down the session. Do you want to use a forced quit to end your {1} session? You'll lose any unsaved objects.", session.metadata.sessionName, session.runtimeMetadata.languageName);
 		this.awaitStateChange(session,
 			[RuntimeState.Exited],
 			10,
@@ -1626,3 +1667,39 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 
 }
 registerSingleton(IRuntimeSessionService, RuntimeSessionService, InstantiationType.Eager);
+
+/**
+ * Waits for a language runtime session to enter a specific state.
+ *
+ * @param session The runtime session to watch.
+ * @param state The target state for the runtime to enter.
+ * @param timeout The number of milliseconds to wait for the runtime to enter the target state
+ *  before throwing an error.
+ * @param error The error to throw if the runtime does not enter the target state within the timeout.
+ * @returns A promise that resolves when the runtime enters the target state or rejects after a timeout.
+ */
+export function waitForRuntimeState(
+	session: ILanguageRuntimeSession,
+	state: RuntimeState,
+	timeout = 10_000,
+	error?: Error,
+): Promise<void> {
+	if (session.getRuntimeState() === state) {
+		return Promise.resolve();
+	}
+	return new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			disposable.dispose();
+			reject(error ?? new Error(`Timed out waiting for runtime ` +
+				`${formatLanguageRuntimeSession(session)} to enter state ${state}.`));
+		}, timeout);
+
+		const disposable = session.onDidChangeRuntimeState(newState => {
+			if (newState === state) {
+				clearTimeout(timer);
+				disposable.dispose();
+				resolve();
+			}
+		});
+	});
+}
