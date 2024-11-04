@@ -8,7 +8,7 @@ import * as positron from 'positron';
 import { JUPYTER_NOTEBOOK_TYPE } from './constants';
 import { log } from './extension';
 import { ResourceMap } from './map';
-import { getRunningNotebookSession, raceTimeout } from './utils';
+import { getRunningNotebookSession } from './utils';
 import { INotebookSessionDidChangeEvent } from './notebookControllerManager';
 
 /** The type of a Jupyter notebook cell output. */
