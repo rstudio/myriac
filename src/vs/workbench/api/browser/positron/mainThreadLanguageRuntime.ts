@@ -1196,6 +1196,10 @@ export class MainThreadLanguageRuntime
 		return Promise.resolve(this._runtimeStartupService.getPreferredRuntime(languageId));
 	}
 
+	$getSessions(): Promise<IRuntimeSessionMetadata[]> {
+		return Promise.resolve(this._runtimeSessionService.getSessions().map(session => session.metadata));
+	}
+
 	$getForegroundSession(): Promise<string | undefined> {
 		return Promise.resolve(this._runtimeSessionService.foregroundSession?.sessionId);
 	}

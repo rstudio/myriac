@@ -302,6 +302,8 @@ export interface IRuntimeSessionService {
 	 */
 	getNotebookSessionForNotebookUri(notebookUri: URI): ILanguageRuntimeSession | undefined;
 
+	getSessions(): ILanguageRuntimeSession[];
+
 	/**
 	 * Checks for a starting or running console for the given language ID.
 	 *

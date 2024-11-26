@@ -278,6 +278,28 @@ export class RuntimeSessionService extends Disposable implements IRuntimeSession
 		return this._notebookSessionsByNotebookUri.get(notebookUri);
 	}
 
+	getSessions(): ILanguageRuntimeSession[] {
+		// Return activeSessions without any sessions that are currently shutting down.
+		const allSessions = Array.from(this._activeSessionsBySessionId.values());
+		this._logService.debug(`[Runtime session] getSessions() allSessions: ${allSessions.length}`);
+		const shuttingDownSessions = Array.from(this._shuttingDownRuntimesBySessionId.keys());
+		this._logService.debug(`[Runtime session] getSessions() shuttingDownSessions: ${shuttingDownSessions.length}`);
+		// const shuttingDownNotebookSessions = Array.from(this._shuttingDownNotebooksByNotebookUri.keys());
+		// this._logService.debug(`[Runtime session] getSessions() shuttingDownNotebookSessions: ${shuttingDownNotebookSessions.length}`);
+		const sessions = allSessions
+			.map(info => info.session)
+			.filter(session =>
+				// TODO: Should we do this? We don't exclude sessions that are in the ShuttingDown state.
+				//       How else can we tell if the runtime session service is in the process of
+				//       shutting down a session, but hasn't yet requested the runtime to shutdown?
+				// Exclude sessions that are shutting down.
+				!this._shuttingDownRuntimesBySessionId.has(session.sessionId));
+		// Exclude notebook sessions that are shutting down.
+		// && !(session.metadata.notebookUri && this._shuttingDownNotebooksByNotebookUri.has(session.metadata.notebookUri)));
+		this._logService.debug(`[Runtime session] getSessions() sessions: ${sessions.length}`);
+		return sessions;
+	}
+
 	/**
 	 * Selects and starts a new runtime session, after shutting down any currently active
 	 * sessions for the language.
