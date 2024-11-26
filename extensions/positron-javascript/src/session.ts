@@ -7,8 +7,6 @@ import * as vscode from 'vscode';
 import * as positron from 'positron';
 import { randomUUID } from 'crypto';
 
-import path = require('path');
-import fs = require('fs');
 import { JavaScriptVariables } from './variables';
 
 /**
@@ -29,6 +27,11 @@ export class JavaScriptLanguageRuntimeSession implements positron.LanguageRuntim
 	 */
 	private readonly _pendingRpcs: Array<string> = [];
 
+	/**
+	 * The current state of the runtime.
+	 */
+	private _state = positron.RuntimeState.Uninitialized;
+
 	constructor(readonly runtimeMetadata: positron.LanguageRuntimeMetadata,
 		readonly metadata: positron.RuntimeSessionMetadata,
 		readonly context: vscode.ExtensionContext) {
@@ -37,6 +40,11 @@ export class JavaScriptLanguageRuntimeSession implements positron.LanguageRuntim
 			inputPrompt: `>`,
 			continuationPrompt: '…',
 		};
+
+		// Listen to our own state changes and update the state.
+		this._onDidChangeRuntimeState.event((state) => {
+			this._state = state;
+		});
 	}
 
 	public dynState: positron.LanguageRuntimeDynState;
@@ -49,6 +57,10 @@ export class JavaScriptLanguageRuntimeSession implements positron.LanguageRuntim
 
 	readonly onDidEndSession: vscode.Event<positron.LanguageRuntimeExit>
 		= this._onDidEndSession.event;
+
+	get state(): positron.RuntimeState {
+		return this._state;
+	}
 
 	execute(code: string, id: string, mode: positron.RuntimeCodeExecutionMode, errorBehavior: positron.RuntimeErrorBehavior): void {
 		// Echo the input code

@@ -746,8 +746,11 @@ declare module 'positron' {
 		 */
 		readonly runtimeMetadata: LanguageRuntimeMetadata;
 
-		/** The state of the runtime that changes during a user session */
+		/** Additional state used by the runtime that may change during a user session */
 		dynState: LanguageRuntimeDynState;
+
+		/** The current state of the runtime */
+		readonly state: RuntimeState;
 
 		/** An object that emits language runtime events */
 		onDidReceiveRuntimeMessage: vscode.Event<LanguageRuntimeMessage>;

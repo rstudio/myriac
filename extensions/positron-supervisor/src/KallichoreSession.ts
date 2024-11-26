@@ -486,6 +486,13 @@ export class KallichoreSession implements JupyterLanguageRuntimeSession {
 	onDidEndSession: vscode.Event<positron.LanguageRuntimeExit>;
 
 	/**
+	 * The current state of the runtime.
+	 **/
+	get state(): positron.RuntimeState {
+		return this._runtimeState;
+	}
+
+	/**
 	 * Requests that the kernel execute a code fragment.
 	 *
 	 * @param code The code to execute

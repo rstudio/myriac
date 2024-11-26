@@ -440,6 +440,10 @@ class ReticulateRuntimeSession implements positron.LanguageRuntimeSession {
 		return this.pythonSession.dynState;
 	}
 
+	public get state() {
+		return this.pythonSession.state;
+	}
+
 	public execute(code: string,
 		id: string,
 		mode: positron.RuntimeCodeExecutionMode,
