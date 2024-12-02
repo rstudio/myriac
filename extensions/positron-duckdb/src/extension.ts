@@ -58,7 +58,7 @@ import { Table, Vector } from 'apache-arrow';
 import { pathToFileURL } from 'url';
 
 // Set to true when doing development for better console logging
-const DEBUG_LOG = false;
+const DEBUG_LOG = true;
 
 class DuckDBInstance {
 	runningQuery: Promise<any> = Promise.resolve();
@@ -1181,23 +1181,21 @@ export class DataExplorerRpcHandler {
 		} else {
 			tableName = `positron_${this._tableIndex++}`;
 			const filePath = uriToFilePath(params.uri);
-			const fileExt = path.extname(filePath);
 			let scanOperation;
-			switch (fileExt) {
-				case '.parquet':
-				case '.parq':
-					scanOperation = `parquet_scan('${filePath}')`;
-					break;
+			if (filePath.endsWith('.parquet') || filePath.endsWith('.parq')) {
+				scanOperation = `parquet_scan('${filePath}')`;
+			} else if (filePath.endsWith('.csv')) {
 				// TODO: Will need to be able to pass CSV / TSV options from the
 				// UI at some point.
-				case '.csv':
-					scanOperation = `read_csv('${filePath}')`;
-					break;
-				case '.tsv':
-					scanOperation = `read_csv('${filePath}', delim='\t')`;
-					break;
-				default:
-					return { error_message: `Unsupported file extension: ${fileExt}` };
+				scanOperation = `read_csv('${filePath}')`;
+			} else if (filePath.endsWith('.csv.gz')) {
+				scanOperation = `read_csv('${filePath}')`;
+			} else if (filePath.endsWith('.tsv')) {
+				scanOperation = `read_csv('${filePath}', delim='\t')`;
+			} else if (filePath.endsWith('.tsv.gz')) {
+				scanOperation = `read_csv('${filePath}', delim='\t', compression='gzip')`;
+			} else {
+				return { error_message: `Unsupported file extension: ${filePath}` };
 			}
 
 			const fileStats = fs.statSync(filePath);

@@ -16,7 +16,7 @@ import { EditorInputFactoryFunction, IEditorResolverService, RegisteredEditorPri
 import { PositronDataExplorerEditor } from 'vs/workbench/contrib/positronDataExplorerEditor/browser/positronDataExplorerEditor';
 import { PositronDataExplorerEditorInput } from 'vs/workbench/contrib/positronDataExplorerEditor/browser/positronDataExplorerEditorInput';
 import { registerPositronDataExplorerActions } from 'vs/workbench/contrib/positronDataExplorerEditor/browser/positronDataExplorerActions';
-import { extname } from 'vs/base/common/resources';
+import { extname, basename } from 'vs/base/common/resources';
 import { IPositronDataExplorerService } from 'vs/workbench/services/positronDataExplorer/browser/interfaces/positronDataExplorerService';
 import { PositronDataExplorerUri } from 'vs/workbench/services/positronDataExplorer/common/positronDataExplorerUri';
 
@@ -76,7 +76,7 @@ class PositronDataExplorerContribution extends Disposable {
 			}
 		));
 
-		const DUCKDB_SUPPORTED_EXTENSIONS = ['parquet', 'parq', 'csv', 'tsv'];
+		const DUCKDB_SUPPORTED_EXTENSIONS = ['parquet', 'parq', 'csv', 'tsv', 'csv.gz', 'tsv.gz'];
 
 		this._register(editorResolverService.registerEditor(
 			`*.{${DUCKDB_SUPPORTED_EXTENSIONS.join(',')}}`,
@@ -84,7 +84,22 @@ class PositronDataExplorerContribution extends Disposable {
 			{
 				singlePerResource: true,
 				canSupportResource: resource => {
-					return DUCKDB_SUPPORTED_EXTENSIONS.includes(extname(resource).substring(1));
+					const fileExt = extname(resource).substring(1); // Extract the extension of the file
+					if (fileExt === 'gz') {
+						const baseName = basename(resource); // Get the base name (e.g., 'file.csv.gz')
+						if (baseName.endsWith('.gz')) {
+							const baseNameWithoutGz = baseName.slice(0, -3); // Remove '.gz' suffix
+
+							// Create a new URI with the modified base name
+							const baseUri = resource.with({ path: resource.path.replace(baseName, baseNameWithoutGz) });
+
+							const baseExt = extname(baseUri).substring(1); // Extract the extension of the base file
+							if (['csv', 'tsv'].includes(baseExt)) {
+								return true; // Explicitly allow .csv.gz and .tsv.gz
+							}
+						}
+					}
+					return DUCKDB_SUPPORTED_EXTENSIONS.includes(fileExt);
 				}
 			},
 			{
